@@ -135,8 +135,11 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 <section>
   <div class="sec-tag">Summary</div>
   <h2>Where the board stands</h2>
-  <p class="col">The layout is fundamentally sound: two solid ground planes, short summing nodes, decoupling within 2–3 mm of every AD1862 supply pin. The real limits sit in two places. One is the shared clock and latch lines; the other is how the firmware drives them.</p>
+  <p class="col">The layout is fundamentally sound: two solid ground planes, short summing nodes, decoupling within 2–3 mm of every AD1862 supply pin. The real limits are all about timing: how the Pico produces its sample clock, how the shared clock and latch lines are routed, and how the firmware drives them.</p>
   <div class="ledger">
+    <div class="row"><div><span class="chip act">Change</span></div>
+      <div class="what">The Pico's sample clock, if the PIO uses a fractional divider<span>The SDK's 125 MHz system clock is not a whole multiple of 44.1 kHz, so a fractional PIO divider puts each LE edge up to one 8 ns tick early or late, in a repeating pattern. That alone is more than ten times the board's worst timing effect. The RP2040 can run at an exact multiple instead.</span></div>
+      <div class="fig">LE error 4–7 ns p-p<br>spurs −75 to −80 dBFS (10–20 kHz tone)<br>exact clock: none</div></div>
     <div class="row"><div><span class="chip act">Change</span></div>
       <div class="what">Shared CLK and LE lines split in a T right at the Pico<span>With fast edges the near DAC (U1) stalls on a shelf inside its switching band, and the tree rings at 405 MHz for about 20 ns. Noise on that shelf moves the LE edge, and in a NOS DAC the LE edge is the sample instant.</span></div>
       <div class="fig">LE at U1: 3.8 ps per mV of noise<br>CLK at U1: 13.9 ps/mV<br>point-to-point: 0.35 ps/mV</div></div>
@@ -166,6 +169,10 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
   <h2>Changes, ranked by benefit for effort</h2>
   <p class="col">Firmware changes cost nothing and address the largest effect, so they come first. Each item says where the evidence comes from: <b>simulated</b> on this layout, <b>diyAudio</b> (post numbers in the forum's AD1862 thread, no. 354078), or <b>datasheet</b>.</p>
   <ol class="actions">
+    <li><div><div class="t">Run the PIO from an exact multiple of the sample rate</div>
+      <p>Set clk_sys to 110.25 MHz for 44.1/88.2/176.4 kHz (PLL: REFDIV 2, FBDIV 147, post-dividers 4 and 2; VCO 882 MHz), or to 129.6 MHz for 48/96/192 kHz (VCO 1296 MHz, ÷5÷2). Write the PIO program so every sample takes exactly 2500 (or 2700) system clocks with an integer divider. Both clocks are within the RP2040's 133 MHz rating, and only firmware changes.</p>
+      <p>With the SDK's 125 MHz and a fractional divider, LE edges wander by 4–7 ns in a fixed pattern, giving spurs of −75 to −80 dBFS on a 10–20 kHz tone. With the exact clock that error is zero; what remains is the PLL's random jitter, which the datasheet does not specify. Changing sample-rate family means re-locking the system PLL; USB runs from its own PLL and is unaffected. The DAC then sets the rate, so USB audio must run in asynchronous mode with a feedback endpoint.</p>
+      <p class="src">simulated (timing model) · RP2040 datasheet §2.18, §3.5.5</p></div></li>
     <li><div><div class="t">Stop the clock before LE falls, and keep the bus static in silence</div>
       <p>Shift the 20-bit word right-justified, stop CLK, hold DATA, then drop LE 3–4 bit periods later. During silence, hold CLK, LE and DATA static. The PIO program can do this at no cost.</p>
       <p>The simulated 51–88 mV of CLK→LE crosstalk then never coincides with the LE edge, so the T-split's threshold shelf has no noise to turn into sample-time jitter. Builders on the thread measured a sample-rate residual of about 1 µA equivalent that disappears when the clocks stop.</p>
@@ -176,9 +183,10 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
     <li><div><div class="t">Give each DAC its own LE pin, and ideally its own CLK pin</div>
       <p>Route two Pico GPIOs instead of one, each through its own series resistor near the Pico. About 27 Ω suits 4 mA drive on these 67 Ω traces. PIO side-set toggles both pins on the same cycle, so the DACs stay in step. Both DACs then see a clean single ramp at 0.35 ps/mV, and the 405 MHz tree resonance disappears.</p>
       <p class="src">simulated · 2 resistors + 2 short traces</p></div></li>
-    <li><div><div class="t">Clock LE from an integer divider</div>
-      <p>In a non-oversampling DAC, LE timing is the sample clock. Avoid fractional PIO clock dividers for the state machine that times LE.</p>
-      <p class="src">diyAudio #870, #944, #1787 · inference for the Pico</p></div></li>
+    <li><div><div class="t">Re-time LE at the DACs from a low-jitter audio oscillator</div>
+      <p>Feed a 45.1584 or 49.152 MHz audio oscillator (or half that) into GPIO20 (GPIN0, up to 50 MHz) and pace the PIO from it: either run clk_sys from it, or have the PIO wait on its edges. Put a dual D flip-flop (74LVC74 class) beside the DACs, clocked by the same oscillator, so each LE edge comes from the oscillator rather than from the Pico's PLL and output pins.</p>
+      <p>Each half of the flip-flop drives one DAC over a short trace, which also removes the T-split. Assuming about 2 ps of oscillator jitter, the sample-time error stays below −135 dBFS even for a full-scale 20 kHz tone.</p>
+      <p class="src">simulated (timing model) · RP2040 datasheet §2.15 · diyAudio #870, #944, #1787</p></div></li>
     <li><div><div class="t">Add 10 µF X7R next to each 100 nF on ±V<sub>L</sub> and ±V<sub>S</sub></div>
       <p>This flattens the 0.2–0.5 Ω region and removes the 4.5 MHz anti-resonance; impedance from 200 kHz to 5 MHz drops to about 20 mΩ. It leaves a mild 0.3 Ω bump near 100 kHz, still well above the audio band.</p>
       <p class="src">simulated (ngspice PDN model)</p></div></li>
@@ -205,6 +213,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
     <ul class="tight">
       <li><b>Full-wave:</b> openEMS 0.37 FDTD, built from source and run on the M1 GPU through Metal. The model covers the digital bus, both AD1862 sockets and both I/V stages: a 43 × 65 mm crop, 11.2 million cells. All 31 capacitors in that area are series R‑C elements. The driven line has a 73 Ω source (33 Ω series resistor + ~40 Ω RP2040 pad); quiet lines have 73 Ω at the Pico end; each DAC input is 5 pF; each I/V summing node is 50 Ω.</li>
       <li><b>Circuit:</b> ngspice transmission-line models of the CLK and LE trees for sweeps; a PDN model with the measured cap-to-pin distances.</li>
+      <li><b>Sample clock:</b> a timing model of the RP2040 PIO divider (datasheet §3.5.5) and PLL limits (§2.18), with the NOS output spectrum for each clocking scheme.</li>
       <li><b>Ground drop:</b> a resistive solver on the rasterised In1 + In2 fill, tied by every GND via and pin barrel.</li>
     </ul>
   </div>
@@ -227,7 +236,37 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 </section>
 
 <section>
-  <div class="sec-tag">2 · Edges</div>
+  <div class="sec-tag">2 · Sample clock</div>
+  <h2>The Pico's clock sets the sample instants</h2>
+  <p class="col">In a non-oversampling DAC each sample reaches the output the moment LE falls, so any error in when LE falls becomes an amplitude error. The PIO program generates LE, and the PIO runs from the system clock through a 16.8 fractional divider. The datasheet describes it as first-order delta-sigma: to reach a non-integer ratio it stretches some periods from n to n+1 system clocks. At the SDK's default 125 MHz, 44.1 kHz needs 2834.47 clocks per sample, so the LE edges land on a grid of 8 ns ticks in a repeating pattern.</p>
+  <figure>
+    <div class="plate"><img src="img/clock_le_error.png" alt="LE timing error per sample with a 125 MHz system clock and a fractional PIO divider"></div>
+    <figcaption><b>LE timing error</b> with the SDK's 125 MHz clock and a fractional divider, for PIO programs of 64 and 96 cycles per sample. The pattern repeats every 2 or 8 samples and spans 4–7 ns.</figcaption>
+  </figure>
+  <p class="col">The model moves each step of the NOS staircase by its LE error and computes the output spectrum for a −1 dBFS tone. The output is quantised to 20 bits, so the AD1862's own floor is visible for comparison.</p>
+  <figure>
+    <div class="plate"><img src="img/clock_spectra.png" alt="Output spectra of a 10 kHz tone for four clocking schemes"></div>
+    <figcaption><b>Output spectrum for a 10 kHz tone</b> under four clocking schemes. The fractional divider adds spurs at −80 to −92 dBFS. With an exact clock only random noise remains, below the 20-bit floor.</figcaption>
+  </figure>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Clock scheme</th><th>LE error</th><th>1 kHz tone</th><th>10 kHz</th><th>20 kHz</th><th>Rate error</th></tr></thead>
+    <tbody>
+      <tr class="hl"><td>125 MHz, fractional divider, 64 cycles/sample</td><td class="n">4 ns p-p</td><td class="n">out of band*</td><td class="n">−80 dBFS</td><td class="n">−76 dBFS</td><td class="n">−12 ppm</td></tr>
+      <tr class="hl"><td>125 MHz, fractional divider, 96 cycles/sample</td><td class="n">7 ns p-p</td><td class="n">−98 dBFS</td><td class="n">−79 dBFS</td><td class="n">−75 dBFS</td><td class="n">−56 ppm</td></tr>
+      <tr><td>Exact 110.25 MHz, assumed 30 ps random</td><td class="n">30 ps rms</td><td class="n">−136 dBFS</td><td class="n">−117 dBFS</td><td class="n">−113 dBFS</td><td class="n">0</td></tr>
+      <tr class="good"><td>Audio oscillator + flip-flop, ~2 ps</td><td class="n">2 ps rms</td><td class="n">−159 dBFS</td><td class="n">−140 dBFS</td><td class="n">−137 dBFS</td><td class="n">0</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col note">Values are the total jitter error from 20 Hz to 20 kHz relative to full scale, for a −1 dBFS tone at 44.1 kHz. * With 64 cycles the pattern alternates every sample, so a 1 kHz tone's error lands at 21.05 kHz, just above the audio band. Where the spurs fall depends on firmware details.</p>
+  <p class="col">With an exact clock, the remaining random jitter comes from the PLL and the Pico's output pins. The datasheet gives no figure for it, so the chart below shows what any amount costs. Staying under the AD1862's ~−120 dB floor takes about 10 ps RMS for a full-scale 20 kHz tone, or about 160 ps at 1 kHz. A good audio oscillator re-timed by a flip-flop sits at a few picoseconds.</p>
+  <figure>
+    <div class="plate"><img src="img/clock_jitter_limit.png" alt="Error relative to full scale versus RMS sample-instant jitter, with the cases from this study marked"></div>
+    <figcaption><b>Error from random sample-instant jitter</b> for a full-scale tone in a NOS DAC, 2·sin(πf/fs)·fs·σ. The red points are the deterministic cases from this study.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">3 · Edges</div>
   <h2>Clock and latch edges at the AD1862 pins</h2>
   <p class="col">CLK and LE each leave one Pico pin, pass one 33 Ω resistor, then split. CLK runs 27.8 mm to U1 and 80.2 mm to U2; LE runs 31.9 mm and 65.3 mm. The near DAC therefore gets its edge in two steps: half the swing arrives at once, and the rest waits for the reflection from the far branch. With a fast edge, that step lands inside the 0.8–2.0 V input threshold band.</p>
   <figure>
@@ -245,7 +284,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
       <tr><td>CLK or LE · 3 ns</td><td>own pin per DAC, 27 Ω</td><td class="n">0.55 ns</td><td class="n">0.92 ps/mV</td><td class="n">0.92 ps/mV</td></tr>
     </tbody>
   </table></div>
-  <p class="col"><b>What this means in audio terms.</b> Suppose 50 mV of data-correlated noise sits on LE while it falls at U1 with fast edges. That moves the sample instant by about 190 ps, which for a full-scale 20 kHz tone is an error near −92 dBFS, far above the AD1862's ~−120 dB floor. Point-to-point routing brings that to about −113 dBFS. A stopped clock removes the noise source itself.</p>
+  <p class="col"><b>What this means in audio terms.</b> Suppose 50 mV of data-correlated noise sits on LE while it falls at U1 with fast edges. That moves the sample instant by about 190 ps, which for a full-scale 20 kHz tone is an error near −96 dBFS, far above the AD1862's ~−120 dB floor. Point-to-point routing brings that to about −116 dBFS. A stopped clock removes the noise source itself.</p>
   <figure>
     <div class="plate"><img src="img/CLK_edges_xtalk.png" alt="openEMS CLK waveforms at both DAC pins and crosstalk on LE and data lines for 3 ns and 1 ns edges"></div>
     <figcaption><b>openEMS, full board, CLK driven.</b> Top: CLK at both DAC pins for a 20 ns pulse. Bottom: what appears on the quiet lines. LE at the DACs picks up 51 mV (3 ns edge) or 88 mV (1 ns edge); D_L and D_R stay at or below 12 mV.</figcaption>
@@ -257,7 +296,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 </section>
 
 <section>
-  <div class="sec-tag">3 · Impedance</div>
+  <div class="sec-tag">4 · Impedance</div>
   <h2>TDR and input impedance of the CLK tree</h2>
   <p class="col">Looking in from the 33 Ω resistor, the driver sees 26–46 Ω for the first few centimetres: the two 67 Ω branches in parallel, pulled lower by the vias and DAC pins. The input impedance has sharp anti-resonances at 405 MHz and about 930 MHz. At those frequencies the source can't absorb energy, which is why the tree keeps ringing. Spatial resolution of this TDR is about 25 mm, set by the 1.4 GHz bandwidth of the run.</p>
   <figure>
@@ -267,7 +306,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 </section>
 
 <section>
-  <div class="sec-tag">4 · Coupling</div>
+  <div class="sec-tag">5 · Coupling</div>
   <h2>How much digital noise reaches the analog side</h2>
   <p class="col">The I/V summing node (AD1862 pin 11 to OPA134 pin 2) is only 3.4 mm long on each channel, and it sits away from the bus. One CLK pulse pushes 0.15–0.34 µA peak into it. The net charge per edge is 0.5 fC on the left channel and 0.7–0.8 fC on the right. One LSB held for one 44.1 kHz sample is 43 fC. Assume 32 clock edges per sample that all add up instead of cancelling in rising/falling pairs. The result is about 1 nA of average current, roughly −120 dB below the ±1 mA full scale, which is the AD1862's own noise floor. In practice the pairs largely cancel.</p>
   <figure>
@@ -288,7 +327,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 </section>
 
 <section>
-  <div class="sec-tag">5 · Fields</div>
+  <div class="sec-tag">6 · Fields</div>
   <h2>Where the CLK energy actually goes</h2>
   <figure>
     <div class="plate narrow"><img src="img/CLK_wave.gif" alt="Animation of the vertical electric field under F.Cu as a CLK pulse propagates"></div>
@@ -305,7 +344,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 </section>
 
 <section>
-  <div class="sec-tag">6 · Ground</div>
+  <div class="sec-tag">7 · Ground</div>
   <h2>Ground voltage drop from the DAC's own current</h2>
   <p class="col">The R‑2R ladder returns signal-dependent current through AD1862 pins 9 and 12. Any plane voltage between those pins and the op-amp's ground reference adds directly to the output. With 1 mA flowing from each DAC's ground pins to the supply connector J1, the difference is 0.59 µV (left) and 0.60 µV (right). That's about 0.2 LSB per mA at the output, so the plane is not a limit.</p>
   <figure>
@@ -315,7 +354,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 </section>
 
 <section>
-  <div class="sec-tag">7 · Supplies</div>
+  <div class="sec-tag">8 · Supplies</div>
   <h2>Decoupling seen from each AD1862 supply pin</h2>
   <p class="col">Every supply pin has a 100 nF within 2.0–2.6 mm and a 47–100 µF electrolytic within 4–7.5 mm. Above 10 MHz the curve is set by the DIP socket and lead inductance (about 4 nH), which no board change can remove. Between 100 kHz and 5 MHz the electrolytics' ESR dominates, with an anti-resonance against the 100 nF near 4.5 MHz. A 10 µF X7R beside each 100 nF fixes that band.</p>
   <figure>
@@ -325,12 +364,13 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 </section>
 
 <section>
-  <div class="sec-tag">8 · Limits</div>
+  <div class="sec-tag">9 · Limits</div>
   <h2>Assumptions to keep in mind</h2>
   <ul class="tight col">
     <li>RP2040 pad resistance (40 Ω at 4 mA) and AD1862 input capacitance (5 pF including socket) are typical values, not measured. The conclusions hold across the 2–12 mA sweep.</li>
     <li>The summing node is modelled as 50 Ω at high frequency. The real node is the OPA134 input in parallel with 47 pF to ground and 47 pF to the output, so the true injected current could be a little higher or lower.</li>
     <li>Copper is a zero-thickness sheet with no solder mask. Real 35 µm copper with mask brings Z<sub>0</sub> from 73.8 Ω to about 65 Ω, which shortens the shelf only slightly.</li>
+    <li>The clock model reproduces the divider's pattern exactly. Raspberry Pi does not specify random jitter from the RP2040's PLL and output pins; the 30 ps and 2 ps cases are assumptions, and the chart shows the cost of any value.</li>
     <li>The full-wave model is a 43 × 65 mm crop. The Pico module and the far right of the board are outside it.</li>
     <li>Field maps are relative (per volt of source). They show where energy concentrates, not compliance margins.</li>
     <li>Items marked diyAudio are builders' reports, cited by post number; weigh them as such.</li>
