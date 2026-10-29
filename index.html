@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="openEMS, ngspice and plane-solver study of the 62DAC AD1862 non-oversampling DAC board: edge integrity, digital-to-analog coupling, fields, ground drop and decoupling, with ranked changes.">
+<title>62DAC Signal Integrity Study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: single reading column (~72ch) with full-width figure plates; findings as a status ledger up top. */
+:root {
+  --bg: #f4f5f1;
+  --surface: #ffffff;
+  --ink: #18201c;
+  --muted: #5a645e;
+  --rule: #d8ddd4;
+  --accent: #0d6650;      /* solder-mask green */
+  --copper: #a85d26;      /* trace copper */
+  --ok: #2c7a4b;
+  --ok-bg: #e3f1e8;
+  --warn: #9a6a12;
+  --warn-bg: #f6ecd6;
+  --act: #a63d2a;
+  --act-bg: #f7e2dc;
+  --plate: #ffffff;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101412; --surface: #171c19; --ink: #e3e9e4; --muted: #98a39c; --rule: #2a322d;
+    --accent: #52c2a0; --copper: #e3995e; --ok: #74c995; --ok-bg: #19301f; --warn: #e2b55a; --warn-bg: #33291a;
+    --act: #f08a72; --act-bg: #3a201a; --plate: #f4f5f1; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101412; --surface: #171c19; --ink: #e3e9e4; --muted: #98a39c; --rule: #2a322d;
+  --accent: #52c2a0; --copper: #e3995e; --ok: #74c995; --ok-bg: #19301f; --warn: #e2b55a; --warn-bg: #33291a;
+  --act: #f08a72; --act-bg: #3a201a; --plate: #f4f5f1; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+img { max-width: 100%; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.58;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 64px;
+}
+main { max-width: 1060px; margin: 0 auto; }
+.col { max-width: 72ch; }
+header.top { padding-block: 40px 28px; border-bottom: 2px solid var(--ink); margin-bottom: 32px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(34px, 6vw, 54px); line-height: 1.02; margin: 8px 0 12px; letter-spacing: -.01em; text-wrap: balance; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 29px; line-height: 1.15; margin: 56px 0 6px; text-wrap: balance; }
+h3 { font-family: var(--font-display); font-weight: 600; font-size: 21px; margin: 28px 0 4px; }
+.sec-tag { font-family: var(--font-mono); font-size: 12px; color: var(--muted); letter-spacing: .05em; text-transform: uppercase; }
+p { margin: 0 0 14px; }
+.lede { font-size: 19.5px; color: var(--ink); }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 22px; font-family: var(--font-mono); font-size: 13px; color: var(--muted); }
+code, .num { font-family: var(--font-mono); font-size: .88em; }
+.num { font-variant-numeric: tabular-nums; }
+a { color: var(--accent); }
+
+/* status ledger */
+.ledger { display: grid; gap: 0; border-top: 1px solid var(--rule); margin-top: 18px; }
+.row { display: grid; grid-template-columns: 112px minmax(0, 1fr) minmax(0, 15rem); gap: 14px 22px; padding: 14px 0; border-bottom: 1px solid var(--rule); align-items: baseline; }
+.row .what { font-weight: 600; }
+.row .what span { display: block; font-weight: 400; color: var(--muted); font-size: 15.5px; margin-top: 2px; }
+.row .fig { font-family: var(--font-mono); font-size: 13.5px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.chip { display: inline-block; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; padding: 3px 8px; border-radius: 3px; }
+.chip.ok { color: var(--ok); background: var(--ok-bg); }
+.chip.watch { color: var(--warn); background: var(--warn-bg); }
+.chip.act { color: var(--act); background: var(--act-bg); }
+
+/* action list */
+ol.actions { list-style: none; padding: 0; margin: 18px 0 0; counter-reset: a; display: grid; gap: 14px; }
+ol.actions li { counter-increment: a; display: grid; grid-template-columns: 2.2em minmax(0, 1fr); gap: 4px 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--rule); border-left: 3px solid var(--copper); }
+ol.actions li::before { content: counter(a); font-family: var(--font-display); font-weight: 700; font-size: 24px; color: var(--copper); line-height: 1.1; }
+ol.actions .t { font-weight: 600; }
+ol.actions .src { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+ol.actions p { margin: 4px 0 0; }
+
+figure { margin: 22px 0 26px; }
+.plate { background: var(--plate); border: 1px solid var(--rule); padding: 10px; overflow-x: auto; }
+.plate img { display: block; width: 100%; height: auto; min-width: 640px; }
+.plate.narrow img { min-width: 0; max-width: 560px; margin: 0 auto; }
+figcaption { font-size: 15px; color: var(--muted); margin-top: 8px; max-width: 80ch; }
+figcaption b { color: var(--ink); font-weight: 600; }
+
+.tablewrap { overflow-x: auto; margin: 14px 0 22px; }
+table { border-collapse: collapse; font-size: 15px; min-width: 520px; width: 100%; }
+th, td { text-align: left; padding: 7px 12px 7px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+td.n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.hl td { background: var(--act-bg); }
+tr.good td { background: var(--ok-bg); }
+
+.note { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; color: var(--muted); font-size: 15.5px; margin: 16px 0; }
+.pending { border: 1px dashed var(--warn); color: var(--warn); padding: 10px 14px; font-family: var(--font-mono); font-size: 13.5px; }
+ul.tight { padding-left: 1.2em; margin: 6px 0 14px; }
+ul.tight li { margin: 3px 0; }
+footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule); font-size: 14px; color: var(--muted); }
+
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  h2 { font-size: 25px; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+<header class="top">
+  <div class="eyebrow">62DAC · AD1862 NOS DAC · board at commit 342ad76</div>
+  <h1>62DAC Signal Integrity Study</h1>
+  <p class="lede col">What on this board limits two AD1862s, and what to change to get their full 20-bit performance. Every number here comes from free tools run on the actual KiCad layout.</p>
+  <div class="meta">
+    <span>29 Oct 2026</span>
+    <span>openEMS 0.37 FDTD (Metal GPU)</span>
+    <span>ngspice</span>
+    <span>KiCad 10 pcbnew export</span>
+    <span>numpy / scipy solvers</span>
+  </div>
+</header>
+
+<section>
+  <div class="sec-tag">Summary</div>
+  <h2>Where the board stands</h2>
+  <p class="col">The layout is fundamentally sound: two solid ground planes, short summing nodes, decoupling within 2–3 mm of every AD1862 supply pin. The real limits sit in two places. One is the shared clock and latch lines; the other is how the firmware drives them.</p>
+  <div class="ledger">
+    <div class="row"><div><span class="chip act">Change</span></div>
+      <div class="what">Shared CLK and LE lines split in a T right at the Pico<span>With fast edges the near DAC (U1) stalls on a shelf inside its switching band, and the tree rings at 405 MHz for about 20 ns. Noise on that shelf moves the LE edge, and in a NOS DAC the LE edge is the sample instant.</span></div>
+      <div class="fig">LE at U1: 3.8 ps per mV of noise<br>CLK at U1: 13.9 ps/mV<br>point-to-point: 0.35 ps/mV</div></div>
+    <div class="row"><div><span class="chip watch">Watch</span></div>
+      <div class="what">CLK couples onto LE along the shared bus<span>Harmless if the clock is stopped when LE falls, which is also what the diyAudio builders converged on. Data lines pick up far less.</span></div>
+      <div class="fig">CLK → LE at the DAC: 51 mV (3 ns edge), 88 mV (1 ns)<br>CLK → data: ≤ 12 mV</div></div>
+    <div class="row"><div><span class="chip watch">Watch</span></div>
+      <div class="what">Decoupling between 100 kHz and 5 MHz<span>The electrolytics' ESR sets a 0.2–0.5 Ω plateau with an anti-resonance near 4.5 MHz, where a Pico bit clock is likely to run.</span></div>
+      <div class="fig">peak 0.45 Ω at 4.5 MHz<br>with 10 µF X7R added: ~0.02 Ω</div></div>
+    <div class="row"><div><span class="chip ok">Good</span></div>
+      <div class="what">Clock and latch edge integrity as built<span>33 Ω series resistors with the RP2040's default 4 mA drive give clean, monotonic edges at both DACs. Even the worst drive setting tried cannot false-clock.</span></div>
+      <div class="fig">overshoot ≤ 0.03 V (3 ns edge)<br>worst ringback 2.24 V &gt; V<sub>IH</sub> 2.0 V</div></div>
+    <div class="row"><div><span class="chip ok">Good</span></div>
+      <div class="what">Digital coupling into the I/V summing nodes<span>Charge injected per clock edge is a small fraction of one LSB held for one sample, even before the rising and falling edges cancel.</span></div>
+      <div class="fig">0.5–0.8 fC per CLK edge<br>1/90–1/50 of an LSB·sample<br>LE edge: 0.6–0.8 fC, ≈ −150 dB</div></div>
+    <div class="row"><div><span class="chip ok">Good</span></div>
+      <div class="what">Ground planes and return paths<span>Both inner planes are unbroken under every digital route; return current stays within about a millimetre of each trace. The DAC's signal-correlated ground current barely shifts the op-amp's reference.</span></div>
+      <div class="fig">0.6 µV per mA, DAC GND → op-amp +IN<br>(1 LSB at the output ≈ 2.7 µV)</div></div>
+    <div class="row"><div><span class="chip ok">Good</span></div>
+      <div class="what">Audio-band supply impedance<span>Below 20 kHz the board's decoupling is not the limit; the off-board regulator is.</span></div>
+      <div class="fig">≈ regulator Z<sub>out</sub> + 30 mΩ</div></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-tag">What to change</div>
+  <h2>Changes, ranked by benefit for effort</h2>
+  <p class="col">Firmware changes cost nothing and address the largest effect, so they come first. Each item says where the evidence comes from: <b>simulated</b> on this layout, <b>diyAudio</b> (post numbers in the forum's AD1862 thread, no. 354078), or <b>datasheet</b>.</p>
+  <ol class="actions">
+    <li><div><div class="t">Stop the clock before LE falls, and keep the bus static in silence</div>
+      <p>Shift the 20-bit word right-justified, stop CLK, hold DATA, then drop LE 3–4 bit periods later. During silence, hold CLK, LE and DATA static. The PIO program can do this at no cost.</p>
+      <p>The simulated 51–88 mV of CLK→LE crosstalk then never coincides with the LE edge, so the T-split's threshold shelf has no noise to turn into sample-time jitter. Builders on the thread measured a sample-rate residual of about 1 µA equivalent that disappears when the clocks stop.</p>
+      <p class="src">simulated · diyAudio #3957, #4277, #6513, #6533–6534</p></div></li>
+    <li><div><div class="t">Keep the RP2040 pads at slow slew and 4 mA drive (the defaults)</div>
+      <p>A 3 ns edge cuts the T-split's jitter sensitivity at U1 from 13.9 to 1.15 ps/mV on CLK and from 3.8 to 1.1 ps/mV on LE. It also reduces CLK→LE crosstalk from 88 to 51 mV. Do not enable fast slew on these four pins.</p>
+      <p class="src">simulated (ngspice + openEMS)</p></div></li>
+    <li><div><div class="t">Give each DAC its own LE pin, and ideally its own CLK pin</div>
+      <p>Route two Pico GPIOs instead of one, each through its own series resistor near the Pico. About 27 Ω suits 4 mA drive on these 67 Ω traces. PIO side-set toggles both pins on the same cycle, so the DACs stay in step. Both DACs then see a clean single ramp at 0.35 ps/mV, and the 405 MHz tree resonance disappears.</p>
+      <p class="src">simulated · 2 resistors + 2 short traces</p></div></li>
+    <li><div><div class="t">Clock LE from an integer divider</div>
+      <p>In a non-oversampling DAC, LE timing is the sample clock. Avoid fractional PIO clock dividers for the state machine that times LE.</p>
+      <p class="src">diyAudio #870, #944, #1787 · inference for the Pico</p></div></li>
+    <li><div><div class="t">Add 10 µF X7R next to each 100 nF on ±V<sub>L</sub> and ±V<sub>S</sub></div>
+      <p>This flattens the 0.2–0.5 Ω region and removes the 4.5 MHz anti-resonance; impedance from 200 kHz to 5 MHz drops to about 20 mΩ. It leaves a mild 0.3 Ω bump near 100 kHz, still well above the audio band.</p>
+      <p class="src">simulated (ngspice PDN model)</p></div></li>
+    <li><div><div class="t">Spend the effort on the regulators, not on more board capacitance</div>
+      <p>Below 20 kHz the rail impedance is the regulator's own. Low-noise LDOs (LT3045/LT3094 class) are what builders used for their best results. Keep ferrite beads off the analog rails.</p>
+      <p class="src">simulated · diyAudio #893, #2819, #11631</p></div></li>
+    <li><div><div class="t">Put a GND via within 0.5 mm of each signal via</div>
+      <p>The six vias on CLK, D_L and D_R currently have their nearest ground via 1.6–2.6 mm away. The return current visibly spreads at those layer changes.</p>
+      <p class="src">simulated (return-current map)</p></div></li>
+    <li><div><div class="t">Use C0G for the 47 pF caps, and leave room for a summing-node shunt</div>
+      <p>C31, C36, C50 and C51 should be C0G. Optionally add a do-not-populate footprint for a 1–2 nF C0G shunt from the summing node to ground, as in the AD797 data sheet's AD1862 circuit. Builders disagree on its value.</p>
+      <p class="src">diyAudio #10842, #1970, #2716, #4960</p></div></li>
+    <li><div><div class="t">Leave the MSB trim unpopulated, and protect the supply order</div>
+      <p>Trim only with an FFT at −60 dBFS; a mis-set trimmer adds 20–30 dB of odd harmonics. Because each rail has a removable jumper, add a Schottky so −V<sub>L</sub> can never go more negative than −V<sub>S</sub>.</p>
+      <p class="src">diyAudio #4770–4772, #10842 · datasheet abs. max.</p></div></li>
+  </ol>
+</section>
+
+<section>
+  <div class="sec-tag">1 · Method</div>
+  <h2>How the board was simulated</h2>
+  <div class="col">
+    <p>The copper geometry comes straight from <code>62DAC.kicad_pcb</code> through KiCad's own polygon engine: every track, pad, via barrel and filled zone, per layer. The stackup is JLC04161H-7628: 0.21 mm prepreg (ε<sub>r</sub> 4.4) between each outer layer and its ground plane, and a 1.065 mm core.</p>
+    <ul class="tight">
+      <li><b>Full-wave:</b> openEMS 0.37 FDTD, built from source and run on the M1 GPU through Metal. The model covers the digital bus, both AD1862 sockets and both I/V stages: a 43 × 65 mm crop, 11.2 million cells. All 31 capacitors in that area are series R‑C elements. The driven line has a 73 Ω source (33 Ω series resistor + ~40 Ω RP2040 pad); quiet lines have 73 Ω at the Pico end; each DAC input is 5 pF; each I/V summing node is 50 Ω.</li>
+      <li><b>Circuit:</b> ngspice transmission-line models of the CLK and LE trees for sweeps; a PDN model with the measured cap-to-pin distances.</li>
+      <li><b>Ground drop:</b> a resistive solver on the rasterised In1 + In2 fill, tied by every GND via and pin barrel.</li>
+    </ul>
+  </div>
+  <h3>Validation</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>0.2 mm trace on F.Cu over In1</th><th>Z<sub>0</sub></th><th>ε<sub>eff</sub></th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td>Closed form, zero-thickness strip (Hammerstad–Jensen)</td><td class="n">72.8 Ω</td><td class="n">3.16</td><td>reference for the FDTD sheet model</td></tr>
+      <tr><td>Closed form, 35 µm copper</td><td class="n">67.0 Ω</td><td class="n">3.19</td><td>what the real board has</td></tr>
+      <tr><td>openEMS, 0.2 mm cells, lines on the edges</td><td class="n">42.5 Ω</td><td class="n">3.52</td><td>too coarse</td></tr>
+      <tr><td>openEMS, 0.1 mm cells</td><td class="n">62.0 Ω</td><td class="n">3.26</td><td>converging</td></tr>
+      <tr class="good"><td>openEMS, 0.15 mm with the ⅓–⅔ edge rule (used for the board)</td><td class="n">73.8 Ω</td><td class="n">3.19</td><td>within 1.4 % of the sheet reference</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col">The ngspice and openEMS CLK waveforms agree on the shape: overshoot 0.12–0.18 V at a 1 ns edge, the same threshold shelf at U1, and the same ~405–430 MHz ringing. The tree rings for about 20 ns, longer than is practical to simulate, so each probe's tail after the pulse was extended with the board's own natural modes, fitted jointly across all probes. Tail-fit error is 2–11 % on most probes and 23 % on IOUT_L. Treat the coupling figures below as ±25 %.</p>
+  <figure>
+    <div class="plate"><img src="img/geom_planes.png" alt="Copper of F.Cu over In1 and B.Cu over In2 with the four digital nets highlighted"></div>
+    <figcaption><b>What the solver sees.</b> Grey is the GND fill on In1 (left) and In2 (right). CLK is red, LE blue, D_L green, D_R purple, the I/V summing nodes orange. No digital route crosses a gap in its reference plane.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">2 · Edges</div>
+  <h2>Clock and latch edges at the AD1862 pins</h2>
+  <p class="col">CLK and LE each leave one Pico pin, pass one 33 Ω resistor, then split. CLK runs 27.8 mm to U1 and 80.2 mm to U2; LE runs 31.9 mm and 65.3 mm. The near DAC therefore gets its edge in two steps: half the swing arrives at once, and the rest waits for the reflection from the far branch. With a fast edge, that step lands inside the 0.8–2.0 V input threshold band.</p>
+  <figure>
+    <div class="plate"><img src="img/clk_le_topology.png" alt="Rising edges of CLK and LE at both DACs for shared T-split and one-pin-per-DAC routing, at 1 ns and 3 ns edges"></div>
+    <figcaption><b>Shared pin with T-split (solid) vs one pin per DAC (dashed).</b> Grey band: 1.2–1.8 V, where a TTL-threshold CMOS input actually switches. With 1 ns edges the U1 curves pause in the band; point-to-point gives a single clean ramp.</figcaption>
+  </figure>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Line · edge</th><th>Topology</th><th>Time in 1.2–1.8 V, U1</th><th>Timing shift per mV of noise, U1</th><th>U2</th></tr></thead>
+    <tbody>
+      <tr class="hl"><td>CLK · 1 ns</td><td>shared, T-split (as built)</td><td class="n">1.14 ns</td><td class="n">13.9 ps/mV</td><td class="n">0.47 ps/mV</td></tr>
+      <tr class="hl"><td>LE · 1 ns</td><td>shared, T-split (as built)</td><td class="n">0.74 ns</td><td class="n">3.84 ps/mV</td><td class="n">0.51 ps/mV</td></tr>
+      <tr class="good"><td>CLK or LE · 1 ns</td><td>own pin per DAC, 27 Ω</td><td class="n">0.20 ns</td><td class="n">0.35 ps/mV</td><td class="n">0.35 ps/mV</td></tr>
+      <tr><td>CLK · 3 ns</td><td>shared, T-split (as built)</td><td class="n">0.57 ns</td><td class="n">1.15 ps/mV</td><td class="n">1.17 ps/mV</td></tr>
+      <tr><td>LE · 3 ns</td><td>shared, T-split (as built)</td><td class="n">0.57 ns</td><td class="n">1.09 ps/mV</td><td class="n">1.19 ps/mV</td></tr>
+      <tr><td>CLK or LE · 3 ns</td><td>own pin per DAC, 27 Ω</td><td class="n">0.55 ns</td><td class="n">0.92 ps/mV</td><td class="n">0.92 ps/mV</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col"><b>What this means in audio terms.</b> Suppose 50 mV of data-correlated noise sits on LE while it falls at U1 with fast edges. That moves the sample instant by about 190 ps, which for a full-scale 20 kHz tone is an error near −92 dBFS, far above the AD1862's ~−120 dB floor. Point-to-point routing brings that to about −113 dBFS. A stopped clock removes the noise source itself.</p>
+  <figure>
+    <div class="plate"><img src="img/CLK_edges_xtalk.png" alt="openEMS CLK waveforms at both DAC pins and crosstalk on LE and data lines for 3 ns and 1 ns edges"></div>
+    <figcaption><b>openEMS, full board, CLK driven.</b> Top: CLK at both DAC pins for a 20 ns pulse. Bottom: what appears on the quiet lines. LE at the DACs picks up 51 mV (3 ns edge) or 88 mV (1 ns edge); D_L and D_R stay at or below 12 mV.</figcaption>
+  </figure>
+  <figure>
+    <div class="plate"><img src="img/clk_tline_sweep.png" alt="ngspice CLK waveforms for series resistors 0, 33 and 68 ohm"></div>
+    <figcaption><b>Series resistor sweep (ngspice, 4 mA drive).</b> 33 Ω is a good value. At 8–12 mA drive with 0–10 Ω the far DAC would ring by ±0.8–1.8 V. Across every combination tried (2–12 mA, 0–100 Ω) the first ringback never dropped below 2.24 V, so the edges cannot double-clock.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">3 · Impedance</div>
+  <h2>TDR and input impedance of the CLK tree</h2>
+  <p class="col">Looking in from the 33 Ω resistor, the driver sees 26–46 Ω for the first few centimetres: the two 67 Ω branches in parallel, pulled lower by the vias and DAC pins. The input impedance has sharp anti-resonances at 405 MHz and about 930 MHz. At those frequencies the source can't absorb energy, which is why the tree keeps ringing. Spatial resolution of this TDR is about 25 mm, set by the 1.4 GHz bandwidth of the run.</p>
+  <figure>
+    <div class="plate"><img src="img/CLK_tdr_zin.png" alt="TDR impedance over distance and input impedance over frequency for the CLK net"></div>
+    <figcaption><b>Left:</b> impedance over distance from a 300 ps, 50 Ω step. <b>Right:</b> impedance seen by the driver from 6 MHz to 1.4 GHz.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">4 · Coupling</div>
+  <h2>How much digital noise reaches the analog side</h2>
+  <p class="col">The I/V summing node (AD1862 pin 11 to OPA134 pin 2) is only 3.4 mm long on each channel, and it sits away from the bus. One CLK pulse pushes 0.15–0.34 µA peak into it. The net charge per edge is 0.5 fC on the left channel and 0.7–0.8 fC on the right. One LSB held for one 44.1 kHz sample is 43 fC. Assume 32 clock edges per sample that all add up instead of cancelling in rising/falling pairs. The result is about 1 nA of average current, roughly −120 dB below the ±1 mA full scale, which is the AD1862's own noise floor. In practice the pairs largely cancel.</p>
+  <figure>
+    <div class="plate narrow"><img src="img/CLK_iout_coupling.png" alt="Current injected into both I/V summing nodes by one CLK pulse"></div>
+    <figcaption><b>Current into each summing node during one 20 ns CLK pulse</b> (3 ns edges). L and R have opposite sign because of where each trace runs relative to the bus.</figcaption>
+  </figure>
+  <h3>With LE driven instead</h3>
+  <p class="col">LE's falling edge is the instant the AD1862 updates its output, so a second full-board run drove LE and kept CLK quiet. The LE edge injects 0.6 fC into the left summing node and 0.7–0.8 fC into the right. It happens once per sample and is the same every sample, so it's independent of the data. As an average current it comes to about 35 pA, around −150 dB below full scale.</p>
+  <p class="col">LE in turn puts 55 mV (3 ns edge) or 89 mV (1 ns edge) onto CLK at U1. That's far below the ~1.4 V switching point, so it cannot clock in a false bit. The 1 ns plot also shows the T-split shelf on LE's falling edge at U1, near 1.65 V. That's the edge that latches the DAC.</p>
+  <figure>
+    <div class="plate"><img src="img/LE_edges_xtalk.png" alt="openEMS LE waveforms at both DAC pins and crosstalk on CLK and data lines"></div>
+    <figcaption><b>openEMS, full board, LE driven.</b> Top: LE at both DAC pins. Note U1's falling edge with a 1 ns source edge (right, near 23 ns). Bottom: pickup on CLK and the data lines.</figcaption>
+  </figure>
+  <figure>
+    <div class="plate narrow"><img src="img/LE_iout_coupling.png" alt="Current injected into both I/V summing nodes by one LE pulse"></div>
+    <figcaption><b>Current into each summing node during one LE pulse</b> (3 ns edges).</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">5 · Fields</div>
+  <h2>Where the CLK energy actually goes</h2>
+  <figure>
+    <div class="plate narrow"><img src="img/CLK_wave.gif" alt="Animation of the vertical electric field under F.Cu as a CLK pulse propagates"></div>
+    <figcaption><b>Wave propagation.</b> E<sub>z</sub> in the prepreg under F.Cu as one pulse leaves the series resistor, splits, and reflects from both DACs (60 frames, about 5 ns). The B.Cu section of the U2 branch is hidden under the plane in this view.</figcaption>
+  </figure>
+  <figure>
+    <div class="plate"><img src="img/CLK_return.png" alt="Return current density on the In1 ground plane at 50, 100, 200 and 400 MHz"></div>
+    <figcaption><b>Return current on In1</b> (tangential H just above the plane). It stays within about 1 mm of the trace at every frequency and spreads only at the two CLK layer-change vias, where it must find a GND via to reach In2.</figcaption>
+  </figure>
+  <figure>
+    <div class="plate"><img src="img/CLK_nf1.png" alt="Near-field magnetic field 1 mm above the board at 50 to 400 MHz"></div>
+    <figcaption><b>Near-field |H| 1 mm above the board</b>, relative to 1 V at the source. The strongest area is the series-resistor and via cluster at the lower left. These maps are for locating sources; they are not an absolute radiated-emission prediction.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">6 · Ground</div>
+  <h2>Ground voltage drop from the DAC's own current</h2>
+  <p class="col">The R‑2R ladder returns signal-dependent current through AD1862 pins 9 and 12. Any plane voltage between those pins and the op-amp's ground reference adds directly to the output. With 1 mA flowing from each DAC's ground pins to the supply connector J1, the difference is 0.59 µV (left) and 0.60 µV (right). That's about 0.2 LSB per mA at the output, so the plane is not a limit.</p>
+  <figure>
+    <div class="plate"><img src="img/gnd_irdrop.png" alt="Potential on the In1 ground plane with 1 mA from each DAC's ground pins to J1"></div>
+    <figcaption><b>Potential on In1</b>, 1 mA from U1 (left) or U2 (right) to J1, in µV. Solved on the real filled copper of In1 and In2 (0.5 oz), coupled through every GND barrel.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">7 · Supplies</div>
+  <h2>Decoupling seen from each AD1862 supply pin</h2>
+  <p class="col">Every supply pin has a 100 nF within 2.0–2.6 mm and a 47–100 µF electrolytic within 4–7.5 mm. Above 10 MHz the curve is set by the DIP socket and lead inductance (about 4 nH), which no board change can remove. Between 100 kHz and 5 MHz the electrolytics' ESR dominates, with an anti-resonance against the 100 nF near 4.5 MHz. A 10 µF X7R beside each 100 nF fixes that band.</p>
+  <figure>
+    <div class="plate"><img src="img/pdn.png" alt="Impedance at the die for all eight AD1862 supply pins, plus upgrade variants"></div>
+    <figcaption><b>|Z| at the die.</b> Left: all four U1 supply pins as built. Right: U2 pins, plus the +V<sub>L</sub> pin with a 10 µF X7R added (brown), and with a polymer bulk cap as well (pink). The regulator is modelled as 30 mΩ + 300 nH of wiring.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">8 · Limits</div>
+  <h2>Assumptions to keep in mind</h2>
+  <ul class="tight col">
+    <li>RP2040 pad resistance (40 Ω at 4 mA) and AD1862 input capacitance (5 pF including socket) are typical values, not measured. The conclusions hold across the 2–12 mA sweep.</li>
+    <li>The summing node is modelled as 50 Ω at high frequency. The real node is the OPA134 input in parallel with 47 pF to ground and 47 pF to the output, so the true injected current could be a little higher or lower.</li>
+    <li>Copper is a zero-thickness sheet with no solder mask. Real 35 µm copper with mask brings Z<sub>0</sub> from 73.8 Ω to about 65 Ω, which shortens the shelf only slightly.</li>
+    <li>The full-wave model is a 43 × 65 mm crop. The Pico module and the far right of the board are outside it.</li>
+    <li>Field maps are relative (per volt of source). They show where energy concentrates, not compliance margins.</li>
+    <li>The diyAudio items are builders' reports; the evidence strength for each is given in the thread digest.</li>
+  </ul>
+</section>
+
+<footer>
+  <p>Simulated on the 62DAC KiCad layout at design revision 342ad76, 29 October 2026. Toolchain: KiCad geometry export, openEMS board model, ngspice clock-tree and PDN models, and a ground-plane solver. All tools are free and open source: KiCad, openEMS, ngspice, numpy, scipy, matplotlib.</p>
+</footer>
+</main>
+</body>
+</html>
