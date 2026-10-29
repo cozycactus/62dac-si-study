@@ -135,7 +135,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 <section>
   <div class="sec-tag">Summary</div>
   <h2>Where the board stands</h2>
-  <p class="col">The layout is fundamentally sound: two solid ground planes, short summing nodes, decoupling within 2–3 mm of every AD1862 supply pin. The real limits are all about timing: how the Pico produces its sample clock, how the shared clock and latch lines are routed, and how the firmware drives them.</p>
+  <p class="col">The layout is fundamentally sound: two solid ground planes, short summing nodes, decoupling within 2–3 mm of every AD1862 supply pin. The real limits are the Pico's sample clock, how the shared clock and latch lines are routed and driven, and the speed and noise of the I/V op-amp.</p>
   <div class="ledger">
     <div class="row"><div><span class="chip act">Change</span></div>
       <div class="what">The Pico's sample clock, if the PIO uses a fractional divider<span>The SDK's 125 MHz system clock is not a whole multiple of 44.1 kHz, so a fractional PIO divider puts each LE edge up to one 8 ns tick early or late, in a repeating pattern. That alone is more than ten times the board's worst timing effect. The RP2040 can run at an exact multiple instead.</span></div>
@@ -143,9 +143,15 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
     <div class="row"><div><span class="chip act">Change</span></div>
       <div class="what">Shared CLK and LE lines split in a T right at the Pico<span>With fast edges the near DAC (U1) stalls on a shelf inside its switching band, and the tree rings at 405 MHz for about 20 ns. Noise on that shelf moves the LE edge, and in a NOS DAC the LE edge is the sample instant.</span></div>
       <div class="fig">LE at U1: 3.8 ps per mV of noise<br>CLK at U1: 13.9 ps/mV<br>point-to-point: 0.35 ps/mV</div></div>
+    <div class="row"><div><span class="chip act">Change</span></div>
+      <div class="what">The OPA134 I/V stage slews on large NOS steps<span>Every full-scale step pushes the summing node about half a volt away from 0 V, so the op-amp leaves its linear range on loud high-frequency content. A 220 pF feedback cap, or a faster op-amp such as the OPA828, removes it. The often-suggested 1–2 nF summing-node cap makes it worse.</span></div>
+      <div class="fig">20 kHz full-scale tone: −60 to −107 dBFS<br>with 220 pF: −103 to −125 dBFS<br>OPA828: −139 to −142 dBFS</div></div>
     <div class="row"><div><span class="chip watch">Watch</span></div>
-      <div class="what">CLK couples onto LE along the shared bus<span>Harmless if the clock is stopped when LE falls, which is also what the diyAudio builders converged on. Data lines pick up far less.</span></div>
-      <div class="fig">CLK → LE at the DAC: 51 mV (3 ns edge), 88 mV (1 ns)<br>CLK → data: ≤ 12 mV</div></div>
+      <div class="what">CLK couples onto LE along the shared bus<span>Harmless if the clock is stopped when LE falls, which is also what the diyAudio builders converged on. Swapping LE and D_R in the bus would cut it about five times.</span></div>
+      <div class="fig">CLK → LE at the DAC: 25–30 mV (3 ns edge), 71–73 mV (1 ns)<br>swap LE and D_R in the bus: ~5× less</div></div>
+    <div class="row"><div><span class="chip watch">Watch</span></div>
+      <div class="what">The I/V stage, not the DAC, sets the noise floor<span>With the OPA134 and 1.4 kΩ the stage is about 4 dB noisier than the AD1862 itself. A lower-noise op-amp and the AD1862's own 3 kΩ feedback resistor close the gap and give a 2.1 Vrms output.</span></div>
+      <div class="fig">OPA134, 1.4 kΩ: 115.6 dB(A)<br>OPA828, 3 kΩ: 122.2 dB(A)<br>AD1862: ~120 dB</div></div>
     <div class="row"><div><span class="chip watch">Watch</span></div>
       <div class="what">Decoupling between 100 kHz and 5 MHz<span>The electrolytics' ESR sets a 0.2–0.5 Ω plateau with an anti-resonance near 4.5 MHz, where a Pico bit clock is likely to run.</span></div>
       <div class="fig">peak 0.45 Ω at 4.5 MHz<br>with 10 µF X7R added: ~0.02 Ω</div></div>
@@ -154,10 +160,13 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
       <div class="fig">overshoot ≤ 0.03 V (3 ns edge)<br>worst ringback 2.24 V &gt; V<sub>IH</sub> 2.0 V</div></div>
     <div class="row"><div><span class="chip ok">Good</span></div>
       <div class="what">Digital coupling into the I/V summing nodes<span>Charge injected per clock edge is a small fraction of one LSB held for one sample, even before the rising and falling edges cancel.</span></div>
-      <div class="fig">0.5–0.8 fC per CLK edge<br>1/90–1/50 of an LSB·sample<br>LE edge: 0.6–0.8 fC, ≈ −150 dB</div></div>
+      <div class="fig">0.2–0.5 fC per CLK edge<br>1/200–1/90 of an LSB·sample<br>LE and data edges: ≤ 0.6 fC</div></div>
     <div class="row"><div><span class="chip ok">Good</span></div>
       <div class="what">Ground planes and return paths<span>Both inner planes are unbroken under every digital route; return current stays within about a millimetre of each trace. The DAC's signal-correlated ground current barely shifts the op-amp's reference.</span></div>
       <div class="fig">0.6 µV per mA, DAC GND → op-amp +IN<br>(1 LSB at the output ≈ 2.7 µV)</div></div>
+    <div class="row"><div><span class="chip ok">Good</span></div>
+      <div class="what">One single op-amp per channel, next to its DAC<span>Better than the earlier design's single LM4562 for both channels: no shared package, 3.4 mm summing nodes and a mirrored layout.</span></div>
+      <div class="fig">L↔R crosstalk at 20 kHz: −129 dB<br>shared dual: −86 to −101 dB</div></div>
     <div class="row"><div><span class="chip ok">Good</span></div>
       <div class="what">Audio-band supply impedance<span>Below 20 kHz the board's decoupling is not the limit; the off-board regulator is.</span></div>
       <div class="fig">≈ regulator Z<sub>out</sub> + 30 mΩ</div></div>
@@ -173,16 +182,26 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
       <p>Set clk_sys to 110.25 MHz for 44.1/88.2/176.4 kHz (PLL: REFDIV 2, FBDIV 147, post-dividers 4 and 2; VCO 882 MHz), or to 129.6 MHz for 48/96/192 kHz (VCO 1296 MHz, ÷5÷2). Write the PIO program so every sample takes exactly 2500 (or 2700) system clocks with an integer divider. Both clocks are within the RP2040's 133 MHz rating, and only firmware changes.</p>
       <p>With the SDK's 125 MHz and a fractional divider, LE edges wander by 4–7 ns in a fixed pattern, giving spurs of −75 to −80 dBFS on a 10–20 kHz tone. With the exact clock that error is zero; what remains is the PLL's random jitter, which the datasheet does not specify. Changing sample-rate family means re-locking the system PLL; USB runs from its own PLL and is unaffected. The DAC then sets the rate, so USB audio must run in asynchronous mode with a feedback endpoint.</p>
       <p class="src">simulated (timing model) · RP2040 datasheet §2.18, §3.5.5</p></div></li>
+    <li><div><div class="t">Change C31 and C36 from 47 pF to 220 pF C0G, or use a faster op-amp</div>
+      <p>With the OPA134, every full-scale NOS step pushes the summing node about half a volt off 0 V and the op-amp slews. Both the generic model and TI's own OPA134 model agree that 220 pF removes it. It slows each step to about 9 V/µs, under the OPA134's 20 V/µs, and moves the I/V corner from 2.4 MHz to 520 kHz, still far above audio. An OPA828 needs no change.</p>
+      <p class="src">simulated (ngspice I/V model + TI PSpice models)</p></div></li>
     <li><div><div class="t">Stop the clock before LE falls, and keep the bus static in silence</div>
       <p>Shift the 20-bit word right-justified, stop CLK, hold DATA, then drop LE 3–4 bit periods later. During silence, hold CLK, LE and DATA static. The PIO program can do this at no cost.</p>
-      <p>The simulated 51–88 mV of CLK→LE crosstalk then never coincides with the LE edge, so the T-split's threshold shelf has no noise to turn into sample-time jitter. Builders on the thread measured a sample-rate residual of about 1 µA equivalent that disappears when the clocks stop.</p>
+      <p>The simulated 25–73 mV of CLK→LE crosstalk then never coincides with the LE edge, so the T-split's threshold shelf has no noise to turn into sample-time jitter. Builders on the thread measured a sample-rate residual of about 1 µA equivalent that disappears when the clocks stop.</p>
       <p class="src">simulated · diyAudio #3957, #4277, #6513, #6533–6534</p></div></li>
     <li><div><div class="t">Keep the RP2040 pads at slow slew and 4 mA drive (the defaults)</div>
-      <p>A 3 ns edge cuts the T-split's jitter sensitivity at U1 from 13.9 to 1.15 ps/mV on CLK and from 3.8 to 1.1 ps/mV on LE. It also reduces CLK→LE crosstalk from 88 to 51 mV. Do not enable fast slew on these four pins.</p>
+      <p>A 3 ns edge cuts the T-split's jitter sensitivity at U1 from 13.9 to 1.15 ps/mV on CLK and from 3.8 to 1.1 ps/mV on LE. It also reduces CLK→LE crosstalk from about 72 to 28 mV. Do not enable fast slew on these four pins.</p>
       <p class="src">simulated (ngspice + openEMS)</p></div></li>
     <li><div><div class="t">Give each DAC its own LE pin, and ideally its own CLK pin</div>
       <p>Route two Pico GPIOs instead of one, each through its own series resistor near the Pico. About 27 Ω suits 4 mA drive on these 67 Ω traces. PIO side-set toggles both pins on the same cycle, so the DACs stay in step. Both DACs then see a clean single ramp at 0.35 ps/mV, and the 405 MHz tree resonance disappears.</p>
-      <p class="src">simulated · 2 resistors + 2 short traces</p></div></li>
+      <p>To keep a single pin, use a balanced T instead: lengthen the U1 branch to match U2 (about 65 mm each) and replace the 33 Ω with 0 Ω. The Pico's own ~40 Ω output then roughly matches the two branches in parallel, and both DACs see a clean edge. A daisy chain with an end termination is worse than today at the default drive.</p>
+      <p class="src">simulated (ngspice) · 2 resistors and 2 short traces, or a meander</p></div></li>
+    <li><div><div class="t">Swap LE and D_R in the bus, so a data line sits between CLK and LE</div>
+      <p>CLK and LE now run side by side at 0.7–1.2 mm pitch for about 60 mm. With D_R between them their pitch doubles, and a coupled-line model checked against the full-board run puts CLK→LE crosstalk about 5× lower. A grounded guard trace with vias does slightly better (about 7×). If the clock is stopped, D_R is static while LE falls, so its own pickup does not matter.</p>
+      <p class="src">simulated (2D field solver + ngspice) · no new parts</p></div></li>
+    <li><div><div class="t">For the last 4 dB of noise: OPA828 with the AD1862's internal 3 kΩ feedback resistor</div>
+      <p>Connect AD1862 pin 10 (RF, unconnected now) to the op-amp output and remove R8 and R9. The OPA828 reaches 122 dB(A) this way, against 116 dB(A) for the OPA134 with 1.4 kΩ, and the output becomes 2.1 Vrms. It comes only in SOIC or VSSOP, so it needs an adapter in the DIP socket. Alternatives: OPA1611 with 150 pF for the lowest noise, or OPA627 with 82 pF to fit the socket. Keep one single op-amp per channel.</p>
+      <p class="src">simulated (ngspice, eight op-amps, TI models for six)</p></div></li>
     <li><div><div class="t">Re-time LE at the DACs from a low-jitter audio oscillator</div>
       <p>Feed a 45.1584 or 49.152 MHz audio oscillator (or half that) into GPIO20 (GPIN0, up to 50 MHz) and pace the PIO from it: either run clk_sys from it, or have the PIO wait on its edges. Put a dual D flip-flop (74LVC74 class) beside the DACs, clocked by the same oscillator, so each LE edge comes from the oscillator rather than from the Pico's PLL and output pins.</p>
       <p>Each half of the flip-flop drives one DAC over a short trace, which also removes the T-split. Assuming about 2 ps of oscillator jitter, the sample-time error stays below −135 dBFS even for a full-scale 20 kHz tone.</p>
@@ -196,9 +215,9 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
     <li><div><div class="t">Put a GND via within 0.5 mm of each signal via</div>
       <p>The six vias on CLK, D_L and D_R currently have their nearest ground via 1.6–2.6 mm away. The return current visibly spreads at those layer changes.</p>
       <p class="src">simulated (return-current map)</p></div></li>
-    <li><div><div class="t">Use C0G for the 47 pF caps, and leave room for a summing-node shunt</div>
-      <p>C31, C36, C50 and C51 should be C0G. Optionally add a do-not-populate footprint for a 1–2 nF C0G shunt from the summing node to ground, as in the AD797 data sheet's AD1862 circuit. Builders disagree on its value.</p>
-      <p class="src">diyAudio #10842, #1970, #2716, #4960</p></div></li>
+    <li><div><div class="t">Use C0G for the feedback caps, and skip the 1–2 nF summing-node cap</div>
+      <p>C31, C36, C50 and C51 should be C0G. The 2.2 nF cap from the summing node to ground suggested in the diyAudio thread (from the AD797 data sheet's AD1862 circuit) cuts the OPA134's phase margin to 12° with 47 pF of feedback. Even with a matching 220 pF it is worse than 220 pF alone. That matches the thread's reports of op-amps misbehaving at 2000 pF.</p>
+      <p class="src">simulated (ngspice I/V model) · diyAudio #2716, #4955, #4960, #10842</p></div></li>
     <li><div><div class="t">Leave the MSB trim unpopulated, and protect the supply order</div>
       <p>Trim only with an FFT at −60 dBFS; a mis-set trimmer adds 20–30 dB of odd harmonics. Because each rail has a removable jumper, add a Schottky so −V<sub>L</sub> can never go more negative than −V<sub>S</sub>.</p>
       <p class="src">diyAudio #4770–4772, #10842 · datasheet abs. max.</p></div></li>
@@ -214,6 +233,8 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
       <li><b>Full-wave:</b> openEMS 0.37 FDTD, built from source and run on the M1 GPU through Metal. The model covers the digital bus, both AD1862 sockets and both I/V stages: a 43 × 65 mm crop, 11.2 million cells. All 31 capacitors in that area are series R‑C elements. The driven line has a 73 Ω source (33 Ω series resistor + ~40 Ω RP2040 pad); quiet lines have 73 Ω at the Pico end; each DAC input is 5 pF; each I/V summing node is 50 Ω.</li>
       <li><b>Circuit:</b> ngspice transmission-line models of the CLK and LE trees for sweeps; a PDN model with the measured cap-to-pin distances.</li>
       <li><b>Sample clock:</b> a timing model of the RP2040 PIO divider (datasheet §3.5.5) and PLL limits (§2.18), with the NOS output spectrum for each clocking scheme.</li>
+      <li><b>I/V stage and op-amps:</b> ngspice models of the AD1862 + op-amp I/V stage (stability, noise, slewing on NOS steps) for eight op-amps, cross-checked with TI's own PSpice models for six of them.</li>
+      <li><b>Bus routing:</b> a 2D field solver for coupled traces (single trace: 67.9 Ω, ε<sub>eff</sub> 3.13) feeding ngspice coupled-line and topology models, checked against the full-board run.</li>
       <li><b>Ground drop:</b> a resistive solver on the rasterised In1 + In2 fill, tied by every GND via and pin barrel.</li>
     </ul>
   </div>
@@ -287,7 +308,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
   <p class="col"><b>What this means in audio terms.</b> Suppose 50 mV of data-correlated noise sits on LE while it falls at U1 with fast edges. That moves the sample instant by about 190 ps, which for a full-scale 20 kHz tone is an error near −96 dBFS, far above the AD1862's ~−120 dB floor. Point-to-point routing brings that to about −116 dBFS. A stopped clock removes the noise source itself.</p>
   <figure>
     <div class="plate"><img src="img/CLK_edges_xtalk.png" alt="openEMS CLK waveforms at both DAC pins and crosstalk on LE and data lines for 3 ns and 1 ns edges"></div>
-    <figcaption><b>openEMS, full board, CLK driven.</b> Top: CLK at both DAC pins for a 20 ns pulse. Bottom: what appears on the quiet lines. LE at the DACs picks up 51 mV (3 ns edge) or 88 mV (1 ns edge); D_L and D_R stay at or below 12 mV.</figcaption>
+    <figcaption><b>openEMS, full board, CLK driven.</b> Top: CLK at both DAC pins for a 20 ns pulse. Bottom: what appears on the quiet lines. LE at the DACs picks up 25–30 mV (3 ns edge) or 71–73 mV (1 ns edge); D_L and D_R stay at or below 12 mV.</figcaption>
   </figure>
   <figure>
     <div class="plate"><img src="img/clk_tline_sweep.png" alt="ngspice CLK waveforms for series resistors 0, 33 and 68 ohm"></div>
@@ -296,7 +317,45 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 </section>
 
 <section>
-  <div class="sec-tag">4 · Impedance</div>
+  <div class="sec-tag">4 · Routing</div>
+  <h2>Can different routing improve things?</h2>
+  <p class="col">On the analog side, no. The summing nodes are 3.4 mm long, both planes are solid, and digital coupling into the summing nodes is a small fraction of an LSB. The two levers are on the digital side: how one CLK or LE line is split to two DACs, and which lines run next to each other in the bus.</p>
+  <h3>Splitting LE (and CLK) to two DACs</h3>
+  <figure>
+    <div class="plate"><img src="img/route_topology.png" alt="LE waveforms at both DACs for four routing topologies, two drive strengths and two edge rates"></div>
+    <figcaption><b>LE at both DACs for four routings</b>, at 4 and 8 mA drive and 1 and 3 ns edges. Solid lines are U1, dashed U2. Grey: the 1.2–1.8 V switching band.</figcaption>
+  </figure>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Routing (timing shift per mV of noise)</th><th>4 mA, 1 ns: U1 / U2</th><th>4 mA, 3 ns: U1 / U2</th><th>8 mA, 1 ns: U1 / U2</th></tr></thead>
+    <tbody>
+      <tr class="hl"><td>As built: T near the Pico, 33 Ω</td><td class="n">4.0 / 0.52 ps/mV</td><td class="n">1.09 / 1.19</td><td class="n">0.93 / 0.42</td></tr>
+      <tr class="good"><td>Balanced T: equal 65 mm branches, 0 Ω</td><td class="n">0.38 / 0.38</td><td class="n">0.97 / 0.97</td><td class="n">0.32 / 0.32</td></tr>
+      <tr><td>Daisy chain Pico → U1 → U2, 68 Ω + 220 pF at the end</td><td class="n">9.9 / 0.53</td><td class="n">1.46 / 1.38</td><td class="n">0.50 / 0.36</td></tr>
+      <tr class="good"><td>One Pico pin per DAC, 27 Ω each</td><td class="n">0.35 / 0.35</td><td class="n">0.92 / 0.92</td><td class="n">0.31 / 0.32</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col">A balanced T is as good as a second Pico pin. Both branches are the same length (about 65 mm, so the U1 branch gets a meander) and there is no series resistor, because the Pico's own ~40 Ω output roughly matches the two 68 Ω branches in parallel. A daisy chain with an RC end termination looks attractive, needing no extra pin and no DC current. But at the default 4 mA drive its first step stops around 2.2 V and the near DAC does worse than today. With slow 3 ns edges all four are within 1 ps/mV of each other.</p>
+  <h3>Which lines run next to each other</h3>
+  <p class="col">CLK and LE run side by side at 0.71–1.24 mm pitch for 62 mm: 52 mm on the branches to U2 and 10.6 mm on the branches to U1. A 2D field solver gives the coupling per millimetre. Built into a coupled-line model of both trees, it reproduces the full-board run within 15 % at 1 ns edges (61–64 mV against 71–73 mV) and reads about 40 % low at 3 ns, so the table compares the options by ratio.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Bus layout</th><th>LE noise at U1, 3 ns edges</th><th>1 ns edges</th><th>vs as built</th></tr></thead>
+    <tbody>
+      <tr class="hl"><td>As built: CLK next to LE, ~0.9 mm pitch</td><td class="n">17 mV</td><td class="n">61 mV</td><td class="n">1×</td></tr>
+      <tr><td>CLK–LE pitch 2 mm</td><td class="n">3 mV</td><td class="n">11 mV</td><td class="n">÷5.5</td></tr>
+      <tr class="good"><td>D_R between CLK and LE (swap LE and D_R)</td><td class="n">3 mV</td><td class="n">11 mV</td><td class="n">÷5.5</td></tr>
+      <tr class="good"><td>Grounded guard trace between, with vias</td><td class="n">2 mV</td><td class="n">8 mV</td><td class="n">÷7.5</td></tr>
+      <tr><td>LE on B.Cu (two planes between)</td><td class="n">≈ 0</td><td class="n">≈ 0</td><td class="n">—</td></tr>
+    </tbody>
+  </table></div>
+  <figure>
+    <div class="plate"><img src="img/bus_xtalk.png" alt="Noise on LE at U1 from one CLK pulse for four bus layouts"></div>
+    <figcaption><b>Noise on LE at U1 from one CLK pulse</b>, coupled-line model. The 430 MHz ringing is the CLK tree's own resonance coupling across.</figcaption>
+  </figure>
+  <p class="col">Swapping LE and D_R is the cheapest change: the same copper, reordered. If the firmware stops the clock before LE falls, this crosstalk never reaches the sample instant anyway, so routing is the backup for firmware that keeps the clock running.</p>
+</section>
+
+<section>
+  <div class="sec-tag">5 · Impedance</div>
   <h2>TDR and input impedance of the CLK tree</h2>
   <p class="col">Looking in from the 33 Ω resistor, the driver sees 26–46 Ω for the first few centimetres: the two 67 Ω branches in parallel, pulled lower by the vias and DAC pins. The input impedance has sharp anti-resonances at 405 MHz and about 930 MHz. At those frequencies the source can't absorb energy, which is why the tree keeps ringing. Spatial resolution of this TDR is about 25 mm, set by the 1.4 GHz bandwidth of the run.</p>
   <figure>
@@ -306,16 +365,16 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 </section>
 
 <section>
-  <div class="sec-tag">5 · Coupling</div>
+  <div class="sec-tag">6 · Coupling</div>
   <h2>How much digital noise reaches the analog side</h2>
-  <p class="col">The I/V summing node (AD1862 pin 11 to OPA134 pin 2) is only 3.4 mm long on each channel, and it sits away from the bus. One CLK pulse pushes 0.15–0.34 µA peak into it. The net charge per edge is 0.5 fC on the left channel and 0.7–0.8 fC on the right. One LSB held for one 44.1 kHz sample is 43 fC. Assume 32 clock edges per sample that all add up instead of cancelling in rising/falling pairs. The result is about 1 nA of average current, roughly −120 dB below the ±1 mA full scale, which is the AD1862's own noise floor. In practice the pairs largely cancel.</p>
+  <p class="col">The I/V summing node (AD1862 pin 11 to OPA134 pin 2) is only 3.4 mm long on each channel, and it sits away from the bus. One CLK pulse pushes 0.10–0.32 µA peak into it. The net charge per edge is about 0.5 fC on the left channel and 0.2–0.3 fC on the right. One LSB held for one 44.1 kHz sample is 43 fC. Assume 32 clock edges per sample that all add up instead of cancelling in rising/falling pairs: that is about 0.7 nA of average current, roughly −123 dB below the ±1 mA full scale. In practice the pairs largely cancel.</p>
   <figure>
     <div class="plate narrow"><img src="img/CLK_iout_coupling.png" alt="Current injected into both I/V summing nodes by one CLK pulse"></div>
     <figcaption><b>Current into each summing node during one 20 ns CLK pulse</b> (3 ns edges). L and R have opposite sign because of where each trace runs relative to the bus.</figcaption>
   </figure>
   <h3>With LE driven instead</h3>
-  <p class="col">LE's falling edge is the instant the AD1862 updates its output, so a second full-board run drove LE and kept CLK quiet. The LE edge injects 0.6 fC into the left summing node and 0.7–0.8 fC into the right. It happens once per sample and is the same every sample, so it's independent of the data. As an average current it comes to about 35 pA, around −150 dB below full scale.</p>
-  <p class="col">LE in turn puts 55 mV (3 ns edge) or 89 mV (1 ns edge) onto CLK at U1. That's far below the ~1.4 V switching point, so it cannot clock in a false bit. The 1 ns plot also shows the T-split shelf on LE's falling edge at U1, near 1.65 V. That's the edge that latches the DAC.</p>
+  <p class="col">LE's falling edge is the instant the AD1862 updates its output, so a second full-board run drove LE and kept CLK quiet. The LE edge injects about 0.5 fC into the left summing node and 0.1–0.2 fC into the right. It happens once per sample and is the same every sample, so it's independent of the data. As an average current it comes to about 20 pA, around −154 dB below full scale.</p>
+  <p class="col">LE in turn puts 31 mV (3 ns edge) or 67 mV (1 ns edge) onto CLK at U1. That's far below the ~1.4 V switching point, so it cannot clock in a false bit. The 1 ns plot also shows the T-split shelf on LE's falling edge at U1, near 1.65 V. That's the edge that latches the DAC.</p>
   <figure>
     <div class="plate"><img src="img/LE_edges_xtalk.png" alt="openEMS LE waveforms at both DAC pins and crosstalk on CLK and data lines"></div>
     <figcaption><b>openEMS, full board, LE driven.</b> Top: LE at both DAC pins. Note U1's falling edge with a 1 ns source edge (right, near 23 ns). Bottom: pickup on CLK and the data lines.</figcaption>
@@ -324,10 +383,81 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
     <div class="plate narrow"><img src="img/LE_iout_coupling.png" alt="Current injected into both I/V summing nodes by one LE pulse"></div>
     <figcaption><b>Current into each summing node during one LE pulse</b> (3 ns edges).</figcaption>
   </figure>
+  <h3>With a data line driven</h3>
+  <p class="col">Two more full-board runs drove D_L and D_R. Each data edge puts 0.59–0.61 fC (D_L) or 0.18–0.31 fC (D_R) into its own channel's summing node, 0.02 and 0.01 fC into the other, and at most 57 mV onto CLK or LE. Coupling into the summing node must vanish at DC, so over a whole sample the charge depends only on whether the line's level changed: at most one edge's worth, about 0.6 fC. That is under 27 pA of data-correlated current, roughly −150 dB below full scale.</p>
 </section>
 
 <section>
-  <div class="sec-tag">6 · Fields</div>
+  <div class="sec-tag">7 · I/V stage</div>
+  <h2>The I/V op-amp on NOS steps</h2>
+  <p class="col">A NOS DAC hands the I/V stage a staircase. On a loud 20 kHz tone each step is almost a full-scale 2 mA jump, arriving in tens of nanoseconds. The op-amp cannot follow instantly, so for a moment the DAC current goes into the feedback and summing-node capacitors, and the summing node, normally a few microvolts, jumps. With the OPA134 and 47 pF it jumps about 0.6 V, beyond the input stage's linear range.</p>
+  <figure>
+    <div class="plate"><img src="img/iv_step.png" alt="Summing node and op-amp output for one full-scale NOS step, several I/V configurations"></div>
+    <figcaption><b>One full-scale step</b> (−1 mA → +1 mA in 50 ns). Left: summing node. Right: op-amp output. With the 2.2 nF summing-node cap and only 47 pF of feedback, the stage rings.</figcaption>
+  </figure>
+  <div class="tablewrap"><table>
+    <thead><tr><th>I/V setup</th><th>Phase margin</th><th>Summing-node jump</th><th>Slewing error, 10 kHz</th><th>20 kHz</th><th>S/N</th></tr></thead>
+    <tbody>
+      <tr class="hl"><td>OPA134 as built, 47 pF</td><td class="n">45°</td><td class="n">591 mV</td><td class="n">−72 dBFS</td><td class="n">−60 dBFS</td><td class="n">115.6 dB(A)</td></tr>
+      <tr class="hl"><td>OPA134 + 2.2 nF summing-node cap</td><td class="n">12°</td><td class="n">193 mV</td><td class="n">−92</td><td class="n">−81</td><td class="n">115.6</td></tr>
+      <tr><td>OPA134 + 2.2 nF + 220 pF feedback</td><td class="n">51°</td><td class="n">119 mV</td><td class="n">−100</td><td class="n">−89</td><td class="n">115.6</td></tr>
+      <tr class="good"><td>OPA134, 220 pF feedback</td><td class="n">51°</td><td class="n">223 mV</td><td class="n">−113</td><td class="n">−103</td><td class="n">115.6</td></tr>
+      <tr class="good"><td>OPA828 as built, 47 pF</td><td class="n">56°</td><td class="n">121 mV</td><td class="n">−153</td><td class="n">−142</td><td class="n">119.8</td></tr>
+      <tr class="good"><td>OPA828, internal 3 kΩ ∥ 47 pF (2.1 Vrms)</td><td class="n">60°</td><td class="n">141 mV</td><td class="n">−147</td><td class="n">−136</td><td class="n">122.2</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col note">Slewing error is the in-band error caused by slewing alone, for a −1 dBFS NOS tone. At 1 kHz it stays below −130 dBFS in every case. The DAC's switching time is assumed (50 ns); the conclusions hold from 20 to 150 ns.</p>
+  <figure>
+    <div class="plate"><img src="img/iv_slew_distortion.png" alt="Slew-induced error spectra for 1, 10 and 20 kHz NOS tones"></div>
+    <figcaption><b>Error from slewing alone</b> for 1, 10 and 20 kHz tones. Generic model.</figcaption>
+  </figure>
+  <p class="col">TI's own OPA134 model gives a milder number for the as-built stage, −107 dBFS at 20 kHz instead of −60, because it stays perfectly linear right up to a hard slew limit while a real JFET input bends gradually. Both models agree that the summing node jumps about half a volt (509 mV in TI's model) and that 220 pF removes the error (−125 dBFS with TI's model). The stage's own noise is 14.7 nV/√Hz at the output: the OPA134's 8 nV/√Hz times a noise gain of 1.67, plus the thermal noise of the 1.4 kΩ and the DAC's 2.1 kΩ output.</p>
+</section>
+
+<section>
+  <div class="sec-tag">8 · Op-amp choice</div>
+  <h2>Which op-amp, and one package or two</h2>
+  <p class="col">Eight op-amps often used for AD1862 I/V, each tried as built, with the feedback cap sized to its slew rate (C<sub>f</sub> ≥ 4 mA ÷ slew rate), and with the AD1862's internal 3 kΩ resistor. Gain-bandwidth, slew rate and noise are from the data sheets; phase margin and input capacitance are assumed (60°, 5 pF) where not published. TI's PSpice models cross-check six of them.</p>
+  <figure>
+    <div class="plate"><img src="img/iv_opamps.png" alt="Scatter of I/V noise against slew-induced error for eight op-amps and three setups"></div>
+    <figcaption><b>Noise against slewing</b> for each op-amp and setup, generic model. Up and to the right is better.</figcaption>
+  </figure>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Op-amp</th><th>Input</th><th>C<sub>f</sub></th><th>S/N, 1.4 kΩ / 3 kΩ</th><th>Slewing at 20 kHz, generic: as built → C<sub>f</sub> sized</th><th>TI model: as built → C<sub>f</sub> sized</th><th>DIP-8 single?</th></tr></thead>
+    <tbody>
+      <tr><td>OPA134 (now)</td><td>JFET</td><td class="n">220 pF</td><td class="n">115.6 / 118.6</td><td class="n">−60 → −103</td><td class="n">−107 → −125</td><td>yes</td></tr>
+      <tr class="good"><td>OPA828</td><td>JFET</td><td class="n">47 pF</td><td class="n">119.8 / 122.2</td><td class="n">−142 → −142</td><td class="n">−139</td><td>no (SOIC, VSSOP)</td></tr>
+      <tr><td>OPA627</td><td>JFET</td><td class="n">82 pF</td><td class="n">118.4 / 121.1</td><td class="n">−113 → −120</td><td class="n">−148 → −132</td><td>yes</td></tr>
+      <tr><td>OPA1641</td><td>JFET</td><td class="n">220 pF</td><td class="n">118.5 / 121.2</td><td class="n">−84 → −102</td><td class="n">−101 → −124</td><td>no</td></tr>
+      <tr><td>OPA1656</td><td>CMOS</td><td class="n">180 pF</td><td class="n">119.4 / 122.0</td><td class="n">−106 → −120</td><td class="n">model failed</td><td>no</td></tr>
+      <tr><td>LM4562</td><td>bipolar</td><td class="n">220 pF</td><td class="n">120.9 / 122.9</td><td class="n">−100 → −117</td><td class="n">no TI model</td><td>dual only</td></tr>
+      <tr class="good"><td>OPA1611 / OPA1612</td><td>bipolar</td><td class="n">150 pF</td><td class="n">122.2 / 123.7</td><td class="n">−108 → −121</td><td class="n">−137 → −123</td><td>no (SOIC)</td></tr>
+      <tr><td>AD797</td><td>bipolar</td><td class="n">220 pF</td><td class="n">122.1 / 123.5</td><td class="n">−103 → −120</td><td class="n">download failed</td><td>yes</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col note">S/N is A-weighted against full scale; the AD1862 itself is about 120 dB. Slewing figures are dBFS for a −1 dBFS tone. TI-model values below about −120 dBFS are at the method's floor and mean "no measurable slewing". Packages are from the vendors' listings; check stock before ordering.</p>
+  <p class="col"><b>Recommendation: the OPA828 with the internal 3 kΩ resistor.</b> It is the only part that both models show clean with the existing 47 pF, it reaches 122 dB(A), and its JFET input has negligible bias current. The OPA1611 is about 1.5 dB quieter but needs 150 pF. The OPA627 fits the DIP socket directly at about 1.5 dB more noise. The OPA134 stays usable with 220 pF. I would skip the OPA1641 (slews like the OPA134), the LM4562 (a dual), the OPA1656 (least checked) and the AD797 (generic model only, and known to be touchy).</p>
+  <h3>One dual for both channels, or one single per channel</h3>
+  <p class="col">An earlier version of this design (the dev branch) used one LM4562 dual for both channels. The current board puts a single op-amp next to each DAC. The summing node is a virtual ground, so any stray capacitance C from the other channel's output becomes crosstalk of 2π·f·C·R<sub>f</sub>. The ngspice two-channel model matches that formula to 0.1 dB.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Layout</th><th>Stray C</th><th>L↔R at 1 kHz</th><th>at 20 kHz</th></tr></thead>
+    <tbody>
+      <tr class="good"><td>Two singles ~40 mm apart (this board)</td><td class="n">~0.002 pF</td><td class="n">−155 dB</td><td class="n">−129 dB</td></tr>
+      <tr><td>One dual in SOIC, short traces</td><td class="n">0.05 pF</td><td class="n">−127 dB</td><td class="n">−101 dB</td></tr>
+      <tr><td>One dual, both summing-node traces converging</td><td class="n">0.15 pF</td><td class="n">−118 dB</td><td class="n">−92 dB</td></tr>
+      <tr class="hl"><td>One dual in a DIP socket</td><td class="n">0.3 pF</td><td class="n">−112 dB</td><td class="n">−86 dB</td></tr>
+      <tr><td>Inside the LM4562 itself (data sheet)</td><td class="n">—</td><td class="n">−118 dB</td><td class="n">−112 dB</td></tr>
+    </tbody>
+  </table></div>
+  <figure>
+    <div class="plate narrow"><img src="img/iv_dual_xtalk.png" alt="Left-right crosstalk against frequency for single and dual op-amp layouts"></div>
+    <figcaption><b>Channel separation</b> for one single per channel against one dual for both. The dashed points are the duals' own data-sheet figures.</figcaption>
+  </figure>
+  <p class="col">A shared dual also stretches at least one summing-node trace from 3.4 mm to 15–40 mm, because the DACs are about 40 mm apart, and it breaks the mirrored left/right layout. Keep one single per channel. A dual per channel only makes sense if its second half does a real job, such as a DC servo or a balanced output.</p>
+</section>
+
+<section>
+  <div class="sec-tag">9 · Fields</div>
   <h2>Where the CLK energy actually goes</h2>
   <figure>
     <div class="plate narrow"><img src="img/CLK_wave.gif" alt="Animation of the vertical electric field under F.Cu as a CLK pulse propagates"></div>
@@ -344,7 +474,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 </section>
 
 <section>
-  <div class="sec-tag">7 · Ground</div>
+  <div class="sec-tag">10 · Ground</div>
   <h2>Ground voltage drop from the DAC's own current</h2>
   <p class="col">The R‑2R ladder returns signal-dependent current through AD1862 pins 9 and 12. Any plane voltage between those pins and the op-amp's ground reference adds directly to the output. With 1 mA flowing from each DAC's ground pins to the supply connector J1, the difference is 0.59 µV (left) and 0.60 µV (right). That's about 0.2 LSB per mA at the output, so the plane is not a limit.</p>
   <figure>
@@ -354,7 +484,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 </section>
 
 <section>
-  <div class="sec-tag">8 · Supplies</div>
+  <div class="sec-tag">11 · Supplies</div>
   <h2>Decoupling seen from each AD1862 supply pin</h2>
   <p class="col">Every supply pin has a 100 nF within 2.0–2.6 mm and a 47–100 µF electrolytic within 4–7.5 mm. Above 10 MHz the curve is set by the DIP socket and lead inductance (about 4 nH), which no board change can remove. Between 100 kHz and 5 MHz the electrolytics' ESR dominates, with an anti-resonance against the 100 nF near 4.5 MHz. A 10 µF X7R beside each 100 nF fixes that band.</p>
   <figure>
@@ -364,13 +494,15 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 </section>
 
 <section>
-  <div class="sec-tag">9 · Limits</div>
+  <div class="sec-tag">12 · Limits</div>
   <h2>Assumptions to keep in mind</h2>
   <ul class="tight col">
     <li>RP2040 pad resistance (40 Ω at 4 mA) and AD1862 input capacitance (5 pF including socket) are typical values, not measured. The conclusions hold across the 2–12 mA sweep.</li>
     <li>The summing node is modelled as 50 Ω at high frequency. The real node is the OPA134 input in parallel with 47 pF to ground and 47 pF to the output, so the true injected current could be a little higher or lower.</li>
     <li>Copper is a zero-thickness sheet with no solder mask. Real 35 µm copper with mask brings Z<sub>0</sub> from 73.8 Ω to about 65 Ω, which shortens the shelf only slightly.</li>
     <li>The clock model reproduces the divider's pattern exactly. Raspberry Pi does not specify random jitter from the RP2040's PLL and output pins; the 30 ps and 2 ps cases are assumptions, and the chart shows the cost of any value.</li>
+    <li><b>Correction, 30 Oct 2026:</b> an earlier version of this page gave CLK→LE crosstalk as 51–88 mV and summing-node charge as 0.5–0.8 fC. Those figures included a spurious low-frequency term left over from extending the simulated waveforms. With it removed (coupling into a quiet line must vanish at DC) they are 25–73 mV and 0.2–0.6 fC.</li>
+    <li>The I/V results use datasheet-based op-amp models plus TI's own PSpice models for six parts. The two disagree on how much slewing distorts: TI's models stay linear up to a hard slew limit, the generic model compresses gradually. So the I/V distortion figures are a range. Both agree on which parts slew and that 220 pF fixes it. The AD1862's output capacitance (20 pF) and switching time (50 ns; checked from 20 to 150 ns) are assumed. The OPA1656 model would not run in ngspice, and TI's noise models don't work there, so noise uses datasheet figures.</li>
     <li>The full-wave model is a 43 × 65 mm crop. The Pico module and the far right of the board are outside it.</li>
     <li>Field maps are relative (per volt of source). They show where energy concentrates, not compliance margins.</li>
     <li>Items marked diyAudio are builders' reports, cited by post number; weigh them as such.</li>
