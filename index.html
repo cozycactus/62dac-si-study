@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="openEMS, ngspice and plane-solver study of the 62DAC AD1862 non-oversampling DAC board: edge integrity, digital-to-analog coupling, fields, ground drop and decoupling, with ranked changes.">
 <title>62DAC Signal Integrity Study</title>
+<link rel="alternate" hreflang="en" href="https://cozycactus.github.io/62dac-si-study/">
+<link rel="alternate" hreflang="ru" href="https://cozycactus.github.io/62dac-si-study/ru/">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -109,6 +111,8 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
   .row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   h2 { font-size: 25px; }
 }
+.meta a.lang { color: var(--accent); font-weight: 600; text-decoration: none; border-bottom: 1px solid currentColor; }
+.meta a.lang:hover, .meta a.lang:focus-visible { color: var(--copper); }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -124,6 +128,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
     <span>ngspice</span>
     <span>KiCad 10 pcbnew export</span>
     <span>numpy / scipy solvers</span>
+    <a class="lang" href="ru/" hreflang="ru" lang="ru">Русская версия</a>
   </div>
 </header>
 
@@ -328,7 +333,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
     <li>Copper is a zero-thickness sheet with no solder mask. Real 35 µm copper with mask brings Z<sub>0</sub> from 73.8 Ω to about 65 Ω, which shortens the shelf only slightly.</li>
     <li>The full-wave model is a 43 × 65 mm crop. The Pico module and the far right of the board are outside it.</li>
     <li>Field maps are relative (per volt of source). They show where energy concentrates, not compliance margins.</li>
-    <li>The diyAudio items are builders' reports; the evidence strength for each is given in the thread digest.</li>
+    <li>Items marked diyAudio are builders' reports, cited by post number; weigh them as such.</li>
   </ul>
 </section>
 

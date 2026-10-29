@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Моделирование в openEMS, ngspice и решателе для земляного слоя платы 62DAC на AD1862 без передискретизации: качество фронтов, цифровые наводки на аналоговую часть, поля, падение напряжения на земле и развязка, с ранжированными изменениями.">
+<title>62DAC: целостность сигналов</title>
+<link rel="alternate" hreflang="en" href="https://cozycactus.github.io/62dac-si-study/">
+<link rel="alternate" hreflang="ru" href="https://cozycactus.github.io/62dac-si-study/ru/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans+Condensed:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: single reading column (~72ch) with full-width figure plates; findings as a status ledger up top. */
+:root {
+  --bg: #f4f5f1;
+  --surface: #ffffff;
+  --ink: #18201c;
+  --muted: #5a645e;
+  --rule: #d8ddd4;
+  --accent: #0d6650;      /* solder-mask green */
+  --copper: #a85d26;      /* trace copper */
+  --ok: #2c7a4b;
+  --ok-bg: #e3f1e8;
+  --warn: #9a6a12;
+  --warn-bg: #f6ecd6;
+  --act: #a63d2a;
+  --act-bg: #f7e2dc;
+  --plate: #ffffff;
+  --font-display: "Fira Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101412; --surface: #171c19; --ink: #e3e9e4; --muted: #98a39c; --rule: #2a322d;
+    --accent: #52c2a0; --copper: #e3995e; --ok: #74c995; --ok-bg: #19301f; --warn: #e2b55a; --warn-bg: #33291a;
+    --act: #f08a72; --act-bg: #3a201a; --plate: #f4f5f1; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101412; --surface: #171c19; --ink: #e3e9e4; --muted: #98a39c; --rule: #2a322d;
+  --accent: #52c2a0; --copper: #e3995e; --ok: #74c995; --ok-bg: #19301f; --warn: #e2b55a; --warn-bg: #33291a;
+  --act: #f08a72; --act-bg: #3a201a; --plate: #f4f5f1; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+img { max-width: 100%; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.58;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 64px;
+}
+main { max-width: 1060px; margin: 0 auto; }
+.col { max-width: 72ch; }
+header.top { padding-block: 40px 28px; border-bottom: 2px solid var(--ink); margin-bottom: 32px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(34px, 6vw, 54px); line-height: 1.02; margin: 8px 0 12px; letter-spacing: -.01em; text-wrap: balance; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 29px; line-height: 1.15; margin: 56px 0 6px; text-wrap: balance; }
+h3 { font-family: var(--font-display); font-weight: 600; font-size: 21px; margin: 28px 0 4px; }
+.sec-tag { font-family: var(--font-mono); font-size: 12px; color: var(--muted); letter-spacing: .05em; text-transform: uppercase; }
+p { margin: 0 0 14px; }
+.lede { font-size: 19.5px; color: var(--ink); }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 22px; font-family: var(--font-mono); font-size: 13px; color: var(--muted); }
+code, .num { font-family: var(--font-mono); font-size: .88em; }
+.num { font-variant-numeric: tabular-nums; }
+a { color: var(--accent); }
+
+/* status ledger */
+.ledger { display: grid; gap: 0; border-top: 1px solid var(--rule); margin-top: 18px; }
+.row { display: grid; grid-template-columns: 112px minmax(0, 1fr) minmax(0, 15rem); gap: 14px 22px; padding: 14px 0; border-bottom: 1px solid var(--rule); align-items: baseline; }
+.row .what { font-weight: 600; }
+.row .what span { display: block; font-weight: 400; color: var(--muted); font-size: 15.5px; margin-top: 2px; }
+.row .fig { font-family: var(--font-mono); font-size: 13.5px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.chip { display: inline-block; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; padding: 3px 8px; border-radius: 3px; }
+.chip.ok { color: var(--ok); background: var(--ok-bg); }
+.chip.watch { color: var(--warn); background: var(--warn-bg); }
+.chip.act { color: var(--act); background: var(--act-bg); }
+
+/* action list */
+ol.actions { list-style: none; padding: 0; margin: 18px 0 0; counter-reset: a; display: grid; gap: 14px; }
+ol.actions li { counter-increment: a; display: grid; grid-template-columns: 2.2em minmax(0, 1fr); gap: 4px 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--rule); border-left: 3px solid var(--copper); }
+ol.actions li::before { content: counter(a); font-family: var(--font-display); font-weight: 700; font-size: 24px; color: var(--copper); line-height: 1.1; }
+ol.actions .t { font-weight: 600; }
+ol.actions .src { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+ol.actions p { margin: 4px 0 0; }
+
+figure { margin: 22px 0 26px; }
+.plate { background: var(--plate); border: 1px solid var(--rule); padding: 10px; overflow-x: auto; }
+.plate img { display: block; width: 100%; height: auto; min-width: 640px; }
+.plate.narrow img { min-width: 0; max-width: 560px; margin: 0 auto; }
+figcaption { font-size: 15px; color: var(--muted); margin-top: 8px; max-width: 80ch; }
+figcaption b { color: var(--ink); font-weight: 600; }
+
+.tablewrap { overflow-x: auto; margin: 14px 0 22px; }
+table { border-collapse: collapse; font-size: 15px; min-width: 520px; width: 100%; }
+th, td { text-align: left; padding: 7px 12px 7px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+td.n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.hl td { background: var(--act-bg); }
+tr.good td { background: var(--ok-bg); }
+
+.note { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; color: var(--muted); font-size: 15.5px; margin: 16px 0; }
+.pending { border: 1px dashed var(--warn); color: var(--warn); padding: 10px 14px; font-family: var(--font-mono); font-size: 13.5px; }
+ul.tight { padding-left: 1.2em; margin: 6px 0 14px; }
+ul.tight li { margin: 3px 0; }
+footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule); font-size: 14px; color: var(--muted); }
+
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  h2 { font-size: 25px; }
+}
+.meta a.lang { color: var(--accent); font-weight: 600; text-decoration: none; border-bottom: 1px solid currentColor; }
+.meta a.lang:hover, .meta a.lang:focus-visible { color: var(--copper); }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+<header class="top">
+  <div class="eyebrow">62DAC · ЦАП AD1862 без передискретизации · плата, коммит 342ad76</div>
+  <h1>62DAC: целостность сигналов</h1>
+  <p class="lede col">Что на этой плате ограничивает два AD1862 и что изменить, чтобы получить от них все 20 бит. Каждое число здесь получено бесплатными инструментами на реальной разводке из KiCad.</p>
+  <div class="meta">
+    <span>29 окт 2026</span>
+    <span>openEMS 0.37 FDTD (GPU, Metal)</span>
+    <span>ngspice</span>
+    <span>экспорт из KiCad 10 pcbnew</span>
+    <span>решатели на numpy / scipy</span>
+    <a class="lang" href="../" hreflang="en" lang="en">English</a>
+  </div>
+</header>
+
+<section>
+  <div class="sec-tag">Итог</div>
+  <h2>В каком состоянии плата</h2>
+  <p class="col">Разводка в основе правильная: два сплошных земляных слоя, короткие суммирующие узлы, развязка в 2–3 мм от каждого вывода питания AD1862. Реальные ограничения в двух местах: общие линии тактирования и защёлки, и то, как прошивка ими управляет.</p>
+  <div class="ledger">
+    <div class="row"><div><span class="chip act">Изменить</span></div>
+      <div class="what">Общие линии CLK и LE расходятся буквой Т сразу у Pico<span>При быстрых фронтах ближний ЦАП (U1) застревает на «полке» внутри своей зоны переключения, а всё дерево звенит на 405 МГц около 20 нс. Шум на этой полке сдвигает фронт LE, а в ЦАП без передискретизации фронт LE — это и есть момент выборки.</span></div>
+      <div class="fig">LE на U1: 3,8 пс на мВ шума<br>CLK на U1: 13,9 пс/мВ<br>точка-точка: 0,35 пс/мВ</div></div>
+    <div class="row"><div><span class="chip watch">Следить</span></div>
+      <div class="what">CLK наводится на LE вдоль общей шины<span>Безвредно, если тактирование остановлено в момент спада LE; к тому же пришли и сборщики на diyAudio. Линии данных ловят гораздо меньше.</span></div>
+      <div class="fig">CLK → LE у ЦАП: 51 мВ (фронт 3 нс), 88 мВ (1 нс)<br>CLK → данные: ≤ 12 мВ</div></div>
+    <div class="row"><div><span class="chip watch">Следить</span></div>
+      <div class="what">Развязка в диапазоне 100 кГц – 5 МГц<span>ESR электролитов даёт плато 0,2–0,5 Ом с антирезонансом около 4,5 МГц — там, где, скорее всего, будет работать битовый клок Pico.</span></div>
+      <div class="fig">пик 0,45 Ом на 4,5 МГц<br>с добавленным 10 мкФ X7R: ~0,02 Ом</div></div>
+    <div class="row"><div><span class="chip ok">Хорошо</span></div>
+      <div class="what">Качество фронтов CLK и LE в текущей разводке<span>Последовательные резисторы 33 Ом при штатном токе выхода RP2040 4 мА дают чистые монотонные фронты на обоих ЦАП. Даже худшая из проверенных настроек не вызывает ложного тактирования.</span></div>
+      <div class="fig">выброс ≤ 0,03 В (фронт 3 нс)<br>худший обратный выброс 2,24 В &gt; V<sub>IH</sub> 2,0 В</div></div>
+    <div class="row"><div><span class="chip ok">Хорошо</span></div>
+      <div class="what">Цифровая наводка на суммирующие узлы I/V<span>Заряд, вносимый одним фронтом тактов, — малая доля одного МЗР, удерживаемого одну выборку, ещё до того как нарастающий и спадающий фронты компенсируют друг друга.</span></div>
+      <div class="fig">0,5–0,8 фКл на фронт CLK<br>1/90–1/50 МЗР·выборки<br>фронт LE: 0,6–0,8 фКл, ≈ −150 дБ</div></div>
+    <div class="row"><div><span class="chip ok">Хорошо</span></div>
+      <div class="what">Земляные слои и пути возвратного тока<span>Оба внутренних слоя целые под всеми цифровыми трассами; возвратный ток держится в пределах примерно миллиметра от трассы. Земляной ток ЦАП, зависящий от сигнала, почти не сдвигает опорную точку ОУ.</span></div>
+      <div class="fig">0,6 мкВ на мА: земля ЦАП → +вход ОУ<br>(1 МЗР на выходе ≈ 2,7 мкВ)</div></div>
+    <div class="row"><div><span class="chip ok">Хорошо</span></div>
+      <div class="what">Импеданс питания в звуковом диапазоне<span>Ниже 20 кГц ограничивает не развязка на плате, а внешний стабилизатор.</span></div>
+      <div class="fig">≈ Z<sub>вых</sub> стабилизатора + 30 мОм</div></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-tag">Что изменить</div>
+  <h2>Изменения по соотношению пользы и труда</h2>
+  <p class="col">Изменения в прошивке ничего не стоят и бьют по самому большому эффекту, поэтому они первые. У каждого пункта указан источник: <b>моделирование</b> этой разводки, <b>diyAudio</b> (номера сообщений в ветке форума об AD1862, № 354078) или <b>даташит</b>.</p>
+  <ol class="actions">
+    <li><div><div class="t">Останавливать тактирование до спада LE и держать шину неподвижной в тишине</div>
+      <p>Выдвигать 20-битное слово с выравниванием вправо, остановить CLK, удерживать DATA, затем опустить LE через 3–4 битовых периода. В тишине держать CLK, LE и DATA неподвижными. Программа PIO делает это бесплатно.</p>
+      <p>Тогда смоделированная наводка CLK→LE в 51–88 мВ никогда не совпадает с фронтом LE, и полке от Т-разветвления нечего превращать в джиттер момента выборки. Сборщики в ветке измерили остаток на частоте выборки, эквивалентный примерно 1 мкА, который исчезает при остановке тактов.</p>
+      <p class="src">моделирование · diyAudio #3957, #4277, #6513, #6533–6534</p></div></li>
+    <li><div><div class="t">Оставить выводы RP2040 с медленной скоростью нарастания и током 4 мА (по умолчанию)</div>
+      <p>Фронт 3 нс снижает чувствительность к джиттеру на U1 при Т-разветвлении с 13,9 до 1,15 пс/мВ на CLK и с 3,8 до 1,1 пс/мВ на LE. Заодно наводка CLK→LE падает с 88 до 51 мВ. Не включайте быстрый slew на этих четырёх выводах.</p>
+      <p class="src">моделирование (ngspice + openEMS)</p></div></li>
+    <li><div><div class="t">Дать каждому ЦАП свой вывод LE, а лучше и свой CLK</div>
+      <p>Развести два GPIO Pico вместо одного, каждый через свой последовательный резистор возле Pico. При токе 4 мА на этих трассах 67 Ом подходит примерно 27 Ом. Side-set в PIO переключает оба вывода в одном такте, так что ЦАП остаются синхронными. Оба ЦАП тогда видят один чистый фронт с 0,35 пс/мВ, а резонанс дерева на 405 МГц исчезает.</p>
+      <p class="src">моделирование · 2 резистора + 2 короткие трассы</p></div></li>
+    <li><div><div class="t">Тактировать LE от целочисленного делителя</div>
+      <p>В ЦАП без передискретизации момент LE и есть тактовая частота выборки. Не используйте дробные делители частоты PIO для конечного автомата, который формирует LE.</p>
+      <p class="src">diyAudio #870, #944, #1787 · вывод для Pico</p></div></li>
+    <li><div><div class="t">Добавить 10 мкФ X7R рядом с каждым 100 нФ на ±V<sub>L</sub> и ±V<sub>S</sub></div>
+      <p>Это выравнивает область 0,2–0,5 Ом и убирает антирезонанс на 4,5 МГц: импеданс от 200 кГц до 5 МГц падает примерно до 20 мОм. Остаётся небольшой горб 0,3 Ом около 100 кГц, всё равно далеко выше звукового диапазона.</p>
+      <p class="src">моделирование (модель PDN в ngspice)</p></div></li>
+    <li><div><div class="t">Вкладываться в стабилизаторы, а не в ёмкость на плате</div>
+      <p>Ниже 20 кГц импеданс шины — это импеданс самого стабилизатора. Лучшие результаты сборщики получали на малошумящих LDO класса LT3045/LT3094. Не ставьте ферритовые бусины в аналоговые шины.</p>
+      <p class="src">моделирование · diyAudio #893, #2819, #11631</p></div></li>
+    <li><div><div class="t">Поставить земляной via в пределах 0,5 мм от каждого сигнального via</div>
+      <p>У шести переходных отверстий на CLK, D_L и D_R ближайший земляной via сейчас в 1,6–2,6 мм. На этих переходах между слоями возвратный ток заметно расплывается.</p>
+      <p class="src">моделирование (карта возвратного тока)</p></div></li>
+    <li><div><div class="t">C0G для конденсаторов 47 пФ и место под шунт суммирующего узла</div>
+      <p>C31, C36, C50 и C51 должны быть C0G. По желанию добавьте незапаиваемое посадочное место под шунт 1–2 нФ C0G от суммирующего узла на землю, как в схеме с AD1862 из даташита AD797. Мнения сборщиков о его пользе расходятся.</p>
+      <p class="src">diyAudio #10842, #1970, #2716, #4960</p></div></li>
+    <li><div><div class="t">Не запаивать подстройку старшего разряда и защитить порядок включения питания</div>
+      <p>Подстраивать только по БПФ на −60 dBFS; неверно выставленный подстроечник добавляет 20–30 дБ нечётных гармоник. Поскольку в каждой шине есть съёмная перемычка, поставьте диод Шоттки, чтобы −V<sub>L</sub> никогда не опускалось ниже −V<sub>S</sub>.</p>
+      <p class="src">diyAudio #4770–4772, #10842 · предельные режимы из даташита</p></div></li>
+  </ol>
+</section>
+
+<section>
+  <div class="sec-tag">1 · Метод</div>
+  <h2>Как моделировалась плата</h2>
+  <div class="col">
+    <p>Геометрия меди взята напрямую из <code>62DAC.kicad_pcb</code> через собственный полигональный движок KiCad: каждая трасса, площадка, ствол переходного отверстия и залитая зона, по слоям. Стек JLC04161H-7628: препрег 0,21 мм (ε<sub>r</sub> 4,4) между каждым внешним слоем и его земляным слоем и ядро 1,065 мм.</p>
+    <ul class="tight">
+      <li><b>Полноволновая модель:</b> openEMS 0.37 FDTD, собранный из исходников и запущенный на GPU M1 через Metal. Модель охватывает цифровую шину, обе панельки AD1862 и оба каскада I/V: вырезку 43 × 65 мм, 11,2 млн ячеек. Все 31 конденсатор в этой области — последовательные R‑C элементы. Активная линия имеет источник 73 Ом (резистор 33 Ом + ~40 Ом выхода RP2040); пассивные линии нагружены на 73 Ом со стороны Pico; каждый вход ЦАП — 5 пФ; каждый суммирующий узел I/V — 50 Ом.</li>
+      <li><b>Схемотехническая модель:</b> модели CLK и LE на линиях передачи в ngspice для перебора параметров; модель PDN с измеренными расстояниями от конденсаторов до выводов.</li>
+      <li><b>Падение напряжения на земле:</b> резистивный решатель на растеризованной заливке In1 + In2, связанной через каждый земляной via и ствол вывода.</li>
+    </ul>
+  </div>
+  <h3>Проверка модели</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Трасса 0,2 мм на F.Cu над In1</th><th>Z<sub>0</sub></th><th>ε<sub>eff</sub></th><th>Примечание</th></tr></thead>
+    <tbody>
+      <tr><td>Формула, полоска нулевой толщины (Хаммерстад–Йенсен)</td><td class="n">72,8 Ом</td><td class="n">3,16</td><td>эталон для листовой модели FDTD</td></tr>
+      <tr><td>Формула, медь 35 мкм</td><td class="n">67,0 Ом</td><td class="n">3,19</td><td>то, что на реальной плате</td></tr>
+      <tr><td>openEMS, ячейки 0,2 мм, линии по краям</td><td class="n">42,5 Ом</td><td class="n">3,52</td><td>слишком грубо</td></tr>
+      <tr><td>openEMS, ячейки 0,1 мм</td><td class="n">62,0 Ом</td><td class="n">3,26</td><td>сходится</td></tr>
+      <tr class="good"><td>openEMS, 0,15 мм с правилом краёв ⅓–⅔ (использовано для платы)</td><td class="n">73,8 Ом</td><td class="n">3,19</td><td>в пределах 1,4 % от эталона</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col">Формы сигнала CLK в ngspice и openEMS совпадают: выброс 0,12–0,18 В при фронте 1 нс, та же пороговая полка на U1 и тот же звон ~405–430 МГц. Дерево звенит около 20 нс — дольше, чем практично моделировать, поэтому хвост каждого пробника после импульса продолжен собственными модами платы, подобранными совместно по всем пробникам. Ошибка подгонки хвоста — 2–11 % для большинства пробников и 23 % для IOUT_L. Цифры наводок ниже стоит считать с точностью ±25 %.</p>
+  <figure>
+    <div class="plate"><img src="../img/geom_planes.png" alt="Медь F.Cu над In1 и B.Cu над In2, выделены четыре цифровые цепи"></div>
+    <figcaption><b>Что видит решатель.</b> Серое — земляная заливка In1 (слева) и In2 (справа). CLK — красный, LE — синий, D_L — зелёный, D_R — фиолетовый, суммирующие узлы I/V — оранжевые. Ни одна цифровая трасса не пересекает разрыв в своём опорном слое. Подписи на графиках — на английском.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">2 · Фронты</div>
+  <h2>Фронты CLK и LE на выводах AD1862</h2>
+  <p class="col">CLK и LE выходят каждый с одного вывода Pico, проходят один резистор 33 Ом и разветвляются. CLK идёт 27,8 мм до U1 и 80,2 мм до U2; LE — 31,9 и 65,3 мм. Поэтому ближний ЦАП получает фронт в два шага: половина перепада приходит сразу, а остальное ждёт отражения из дальней ветви. При быстром фронте эта ступенька попадает внутрь входной пороговой зоны 0,8–2,0 В.</p>
+  <figure>
+    <div class="plate"><img src="../img/clk_le_topology.png" alt="Нарастающие фронты CLK и LE на обоих ЦАП при общем выводе с Т-разветвлением и при отдельном выводе на каждый ЦАП, фронты 1 нс и 3 нс"></div>
+    <figcaption><b>Общий вывод с Т-разветвлением (сплошные) против отдельного вывода на каждый ЦАП (пунктир).</b> Серая полоса: 1,2–1,8 В, где КМОП-вход с ТТЛ-порогом реально переключается. При фронтах 1 нс кривые U1 задерживаются в этой полосе; соединение точка-точка даёт один чистый фронт.</figcaption>
+  </figure>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Линия · фронт</th><th>Топология</th><th>Время в 1,2–1,8 В, U1</th><th>Сдвиг момента на мВ шума, U1</th><th>U2</th></tr></thead>
+    <tbody>
+      <tr class="hl"><td>CLK · 1 нс</td><td>общий, Т-разветвление (как сейчас)</td><td class="n">1,14 нс</td><td class="n">13,9 пс/мВ</td><td class="n">0,47 пс/мВ</td></tr>
+      <tr class="hl"><td>LE · 1 нс</td><td>общий, Т-разветвление (как сейчас)</td><td class="n">0,74 нс</td><td class="n">3,84 пс/мВ</td><td class="n">0,51 пс/мВ</td></tr>
+      <tr class="good"><td>CLK или LE · 1 нс</td><td>свой вывод на ЦАП, 27 Ом</td><td class="n">0,20 нс</td><td class="n">0,35 пс/мВ</td><td class="n">0,35 пс/мВ</td></tr>
+      <tr><td>CLK · 3 нс</td><td>общий, Т-разветвление (как сейчас)</td><td class="n">0,57 нс</td><td class="n">1,15 пс/мВ</td><td class="n">1,17 пс/мВ</td></tr>
+      <tr><td>LE · 3 нс</td><td>общий, Т-разветвление (как сейчас)</td><td class="n">0,57 нс</td><td class="n">1,09 пс/мВ</td><td class="n">1,19 пс/мВ</td></tr>
+      <tr><td>CLK или LE · 3 нс</td><td>свой вывод на ЦАП, 27 Ом</td><td class="n">0,55 нс</td><td class="n">0,92 пс/мВ</td><td class="n">0,92 пс/мВ</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col"><b>Что это значит для звука.</b> Пусть на LE во время его спада на U1 при быстрых фронтах лежит 50 мВ шума, коррелированного с данными. Это сдвигает момент выборки примерно на 190 пс, что для полномасштабного тона 20 кГц даёт ошибку около −92 dBFS — далеко выше собственного шумового порога AD1862 (~−120 дБ). Соединение точка-точка снижает её примерно до −113 dBFS. Остановка тактов убирает сам источник шума.</p>
+  <figure>
+    <div class="plate"><img src="../img/CLK_edges_xtalk.png" alt="Формы сигнала CLK в openEMS на выводах обоих ЦАП и наводки на LE и линии данных при фронтах 3 нс и 1 нс"></div>
+    <figcaption><b>openEMS, вся плата, активен CLK.</b> Вверху: CLK на выводах обоих ЦАП для импульса 20 нс. Внизу: что появляется на пассивных линиях. LE у ЦАП получает 51 мВ (фронт 3 нс) или 88 мВ (фронт 1 нс); D_L и D_R — не более 12 мВ.</figcaption>
+  </figure>
+  <figure>
+    <div class="plate"><img src="../img/clk_tline_sweep.png" alt="Формы сигнала CLK в ngspice при последовательных резисторах 0, 33 и 68 Ом"></div>
+    <figcaption><b>Перебор последовательного резистора (ngspice, ток 4 мА).</b> 33 Ом — хорошее значение. При токе 8–12 мА и 0–10 Ом дальний ЦАП звенел бы на ±0,8–1,8 В. Во всех проверенных сочетаниях (2–12 мА, 0–100 Ом) первый обратный выброс не опускался ниже 2,24 В, так что двойного тактирования быть не может.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">3 · Импеданс</div>
+  <h2>Рефлектометрия (TDR) и входной импеданс дерева CLK</h2>
+  <p class="col">Со стороны резистора 33 Ом драйвер видит 26–46 Ом на первых сантиметрах: две ветви по 67 Ом параллельно, ещё ниже из-за переходных отверстий и выводов ЦАП. Во входном импедансе резкие антирезонансы на 405 МГц и около 930 МГц. На этих частотах источник не может поглощать энергию, поэтому дерево и продолжает звенеть. Пространственное разрешение этой TDR около 25 мм — его задаёт полоса моделирования 1,4 ГГц.</p>
+  <figure>
+    <div class="plate"><img src="../img/CLK_tdr_zin.png" alt="TDR-импеданс по расстоянию и входной импеданс по частоте для цепи CLK"></div>
+    <figcaption><b>Слева:</b> импеданс по расстоянию от ступеньки 300 пс, 50 Ом. <b>Справа:</b> импеданс, который видит драйвер, от 6 МГц до 1,4 ГГц.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">4 · Наводки</div>
+  <h2>Сколько цифрового шума доходит до аналоговой части</h2>
+  <p class="col">Суммирующий узел I/V (вывод 11 AD1862 — вывод 2 OPA134) в каждом канале длиной всего 3,4 мм и лежит в стороне от шины. Один импульс CLK вносит в него пиковый ток 0,15–0,34 мкА. Суммарный заряд за фронт — 0,5 фКл в левом канале и 0,7–0,8 фКл в правом. Один МЗР, удерживаемый одну выборку при 44,1 кГц, — это 43 фКл. Допустим, на выборку приходится 32 фронта тактов и все они складываются, а не компенсируются парами нарастающий/спадающий. Получится около 1 нА среднего тока — примерно −120 дБ относительно полной шкалы ±1 мА, то есть на уровне собственного шума AD1862. На практике пары в основном компенсируются.</p>
+  <figure>
+    <div class="plate narrow"><img src="../img/CLK_iout_coupling.png" alt="Ток, вносимый в оба суммирующих узла I/V одним импульсом CLK"></div>
+    <figcaption><b>Ток в каждый суммирующий узел за один импульс CLK длительностью 20 нс</b> (фронты 3 нс). У L и R противоположный знак из-за того, как каждая трасса проходит относительно шины.</figcaption>
+  </figure>
+  <h3>Когда активен LE</h3>
+  <p class="col">Спад LE — момент, когда AD1862 обновляет выход, поэтому во втором полноволновом прогоне активным был LE, а CLK молчал. Фронт LE вносит 0,6 фКл в левый суммирующий узел и 0,7–0,8 фКл в правый. Это происходит раз за выборку и одинаково каждую выборку, то есть не зависит от данных. В пересчёте на средний ток это около 35 пА, примерно −150 дБ относительно полной шкалы.</p>
+  <p class="col">В свою очередь LE наводит на CLK у U1 55 мВ (фронт 3 нс) или 89 мВ (фронт 1 нс). Это намного ниже порога переключения ~1,4 В, так что ложный бит не защёлкнется. На графике для 1 нс также видна полка от Т-разветвления на спаде LE у U1, около 1,65 В. Именно этот фронт защёлкивает ЦАП.</p>
+  <figure>
+    <div class="plate"><img src="../img/LE_edges_xtalk.png" alt="Формы сигнала LE в openEMS на выводах обоих ЦАП и наводки на CLK и линии данных"></div>
+    <figcaption><b>openEMS, вся плата, активен LE.</b> Вверху: LE на выводах обоих ЦАП. Обратите внимание на спад у U1 при фронте источника 1 нс (справа, около 23 нс). Внизу: наводки на CLK и линии данных.</figcaption>
+  </figure>
+  <figure>
+    <div class="plate narrow"><img src="../img/LE_iout_coupling.png" alt="Ток, вносимый в оба суммирующих узла I/V одним импульсом LE"></div>
+    <figcaption><b>Ток в каждый суммирующий узел за один импульс LE</b> (фронты 3 нс).</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">5 · Поля</div>
+  <h2>Куда на самом деле уходит энергия CLK</h2>
+  <figure>
+    <div class="plate narrow"><img src="../img/CLK_wave.gif" alt="Анимация вертикального электрического поля под F.Cu при распространении импульса CLK"></div>
+    <figcaption><b>Распространение волны.</b> E<sub>z</sub> в препреге под F.Cu, пока импульс выходит из последовательного резистора, разветвляется и отражается от обоих ЦАП (60 кадров, около 5 нс). Участок ветви к U2 на B.Cu на этом виде скрыт под земляным слоем.</figcaption>
+  </figure>
+  <figure>
+    <div class="plate"><img src="../img/CLK_return.png" alt="Плотность возвратного тока в земляном слое In1 на 50, 100, 200 и 400 МГц"></div>
+    <figcaption><b>Возвратный ток в In1</b> (касательная H чуть выше слоя). На всех частотах он держится в пределах ~1 мм от трассы и расплывается только у двух переходов CLK между слоями, где ему нужно найти земляной via, чтобы попасть в In2.</figcaption>
+  </figure>
+  <figure>
+    <div class="plate"><img src="../img/CLK_nf1.png" alt="Ближнее магнитное поле в 1 мм над платой на 50–400 МГц"></div>
+    <figcaption><b>Ближнее поле |H| в 1 мм над платой</b>, относительно 1 В на источнике. Сильнее всего — группа из последовательных резисторов и переходных отверстий слева внизу. Эти карты показывают, где источники; это не абсолютный прогноз излучаемых помех.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">6 · Земля</div>
+  <h2>Падение напряжения на земле от собственного тока ЦАП</h2>
+  <p class="col">Лестница R‑2R возвращает зависящий от сигнала ток через выводы 9 и 12 AD1862. Любое напряжение на слое между этими выводами и опорной землёй ОУ прямо добавляется к выходу. При токе 1 мА от земляных выводов каждого ЦАП к разъёму питания J1 разница составляет 0,59 мкВ (левый) и 0,60 мкВ (правый). Это около 0,2 МЗР на мА на выходе, так что земляной слой не ограничивает.</p>
+  <figure>
+    <div class="plate"><img src="../img/gnd_irdrop.png" alt="Потенциал земляного слоя In1 при токе 1 мА от земляных выводов каждого ЦАП к J1"></div>
+    <figcaption><b>Потенциал In1</b>, 1 мА от U1 (слева) или U2 (справа) к J1, в мкВ. Расчёт на реальной заливке In1 и In2 (0,5 унции), связанной через все земляные стволы.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">7 · Питание</div>
+  <h2>Развязка со стороны каждого вывода питания AD1862</h2>
+  <p class="col">У каждого вывода питания есть 100 нФ в 2,0–2,6 мм и электролит 47–100 мкФ в 4–7,5 мм. Выше 10 МГц кривую определяет индуктивность панельки DIP и выводов (около 4 нГн), которую никакие изменения платы не уберут. От 100 кГц до 5 МГц доминирует ESR электролитов с антирезонансом относительно 100 нФ около 4,5 МГц. 10 мкФ X7R рядом с каждым 100 нФ исправляет эту полосу.</p>
+  <figure>
+    <div class="plate"><img src="../img/pdn.png" alt="Импеданс на кристалле для всех восьми выводов питания AD1862 и варианты улучшения"></div>
+    <figcaption><b>|Z| на кристалле.</b> Слева: все четыре вывода питания U1 как есть. Справа: выводы U2, а также вывод +V<sub>L</sub> с добавленным 10 мкФ X7R (коричневый) и ещё с полимерным накопительным конденсатором (розовый). Стабилизатор смоделирован как 30 мОм + 300 нГн проводов.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="sec-tag">8 · Ограничения</div>
+  <h2>Допущения, которые стоит помнить</h2>
+  <ul class="tight col">
+    <li>Выходное сопротивление RP2040 (40 Ом при 4 мА) и входная ёмкость AD1862 (5 пФ с панелькой) — типовые значения, не измеренные. Выводы сохраняются во всём переборе 2–12 мА.</li>
+    <li>Суммирующий узел на высоких частотах смоделирован как 50 Ом. Реальный узел — вход OPA134 параллельно с 47 пФ на землю и 47 пФ на выход, так что фактический ток может быть немного больше или меньше.</li>
+    <li>Медь — лист нулевой толщины, без паяльной маски. Реальная медь 35 мкм с маской снижает Z<sub>0</sub> с 73,8 Ом примерно до 65 Ом, что лишь немного укорачивает полку.</li>
+    <li>Полноволновая модель — вырезка 43 × 65 мм. Модуль Pico и правый край платы в неё не входят.</li>
+    <li>Карты полей относительные (на вольт источника). Они показывают, где концентрируется энергия, а не запас до норм ЭМС.</li>
+    <li>Пункты с пометкой diyAudio — отчёты сборщиков со ссылками на номера сообщений; оценивайте их соответственно.</li>
+  </ul>
+</section>
+
+<footer>
+  <p>Моделирование разводки 62DAC в KiCad, ревизия 342ad76, 29 октября 2026. Инструменты: экспорт геометрии из KiCad, модель платы в openEMS, модели дерева тактов и PDN в ngspice, решатель для земляного слоя. Все инструменты свободные и открытые: KiCad, openEMS, ngspice, numpy, scipy, matplotlib.</p>
+</footer>
+</main>
+</body>
+</html>
