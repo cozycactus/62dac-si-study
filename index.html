@@ -126,6 +126,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
     <span>29 Oct 2026</span>
     <span>openEMS 0.37 FDTD (Metal GPU)</span>
     <span>ngspice</span>
+    <span>LTspice 17</span>
     <span>KiCad 10 pcbnew export</span>
     <span>numpy / scipy solvers</span>
     <a class="lang" href="ru/" hreflang="ru" lang="ru">Русская версия</a>
@@ -155,6 +156,9 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
     <div class="row"><div><span class="chip watch">Watch</span></div>
       <div class="what">Decoupling between 100 kHz and 5 MHz<span>The electrolytics' ESR sets a 0.2–0.5 Ω plateau with an anti-resonance near 4.5 MHz, where a Pico bit clock is likely to run.</span></div>
       <div class="fig">peak 0.45 Ω at 4.5 MHz<br>with 10 µF X7R added: ~0.02 Ω</div></div>
+    <div class="row"><div><span class="chip watch">Watch</span></div>
+      <div class="what">The AD1862's supply rejection is not published<span>Whatever noise sits on ±V<sub>S</sub> reaches the output by an unknown amount. LT3045/LT3094 rails are quiet enough that it no longer matters; with an LM317 the DAC would have to reject 43–63 dB.</span></div>
+      <div class="fig">noise at the pin, 20 Hz–20 kHz:<br>LT3045 0.33 µV · LM317 + C<sub>ADJ</sub> 53 µV<br>LM317 alone 509 µV</div></div>
     <div class="row"><div><span class="chip ok">Good</span></div>
       <div class="what">Clock and latch edge integrity as built<span>33 Ω series resistors with the RP2040's default 4 mA drive give clean, monotonic edges at both DACs. Even the worst drive setting tried cannot false-clock.</span></div>
       <div class="fig">overshoot ≤ 0.03 V (3 ns edge)<br>worst ringback 2.24 V &gt; V<sub>IH</sub> 2.0 V</div></div>
@@ -168,8 +172,8 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
       <div class="what">One single op-amp per channel, next to its DAC<span>Better than the earlier design's single LM4562 for both channels: no shared package, 3.4 mm summing nodes and a mirrored layout.</span></div>
       <div class="fig">L↔R crosstalk at 20 kHz: −129 dB<br>shared dual: −86 to −101 dB</div></div>
     <div class="row"><div><span class="chip ok">Good</span></div>
-      <div class="what">Audio-band supply impedance<span>Below 20 kHz the board's decoupling is not the limit; the off-board regulator is.</span></div>
-      <div class="fig">≈ regulator Z<sub>out</sub> + 30 mΩ</div></div>
+      <div class="what">Audio-band supply impedance<span>Below 20 kHz the board's decoupling is not the limit. The wiring to the regulator and the regulator itself are.</span></div>
+      <div class="fig">23–50 mΩ at 1 kHz with any good regulator<br>LM317 without C<sub>ADJ</sub>: 0.9 Ω peak at 3.5 kHz</div></div>
   </div>
 </section>
 
@@ -200,8 +204,8 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
       <p>CLK and LE now run side by side at 0.7–1.2 mm pitch for about 60 mm. With D_R between them their pitch doubles, and a coupled-line model checked against the full-board run puts CLK→LE crosstalk about 5× lower. A grounded guard trace with vias does slightly better (about 7×). If the clock is stopped, D_R is static while LE falls, so its own pickup does not matter.</p>
       <p class="src">simulated (2D field solver + ngspice) · no new parts</p></div></li>
     <li><div><div class="t">For the last 4 dB of noise: OPA828 with the AD1862's internal 3 kΩ feedback resistor</div>
-      <p>Connect AD1862 pin 10 (RF, unconnected now) to the op-amp output and remove R8 and R9. The OPA828 reaches 122 dB(A) this way, against 116 dB(A) for the OPA134 with 1.4 kΩ, and the output becomes 2.1 Vrms. It comes only in SOIC or VSSOP, so it needs an adapter in the DIP socket. Alternatives: OPA1611 with 150 pF for the lowest noise, or OPA627 with 82 pF to fit the socket. Keep one single op-amp per channel.</p>
-      <p class="src">simulated (ngspice, eight op-amps, TI models for six)</p></div></li>
+      <p>Connect AD1862 pin 10 (RF, unconnected now) to the op-amp output and remove R8 and R9. The OPA828 reaches 122 dB(A) this way, against 116 dB(A) for the OPA134 with 1.4 kΩ, and the output becomes 2.1 Vrms. It comes only in SOIC or VSSOP, so it needs an adapter in the DIP socket. Alternatives: the ADA4625-1 (also SOIC), which ADI's model shows as good as the OPA828; OPA1611 with 150 pF for the lowest noise; or OPA627 with 82 pF to fit the socket. Keep one single op-amp per channel and keep 47 pF unless the part slews.</p>
+      <p class="src">simulated (ngspice and LTspice; manufacturers' models for eight parts)</p></div></li>
     <li><div><div class="t">Re-time LE at the DACs from a low-jitter audio oscillator</div>
       <p>Feed a 45.1584 or 49.152 MHz audio oscillator (or half that) into GPIO20 (GPIN0, up to 50 MHz) and pace the PIO from it: either run clk_sys from it, or have the PIO wait on its edges. Put a dual D flip-flop (74LVC74 class) beside the DACs, clocked by the same oscillator, so each LE edge comes from the oscillator rather than from the Pico's PLL and output pins.</p>
       <p>Each half of the flip-flop drives one DAC over a short trace, which also removes the T-split. Assuming about 2 ps of oscillator jitter, the sample-time error stays below −135 dBFS even for a full-scale 20 kHz tone.</p>
@@ -210,8 +214,8 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
       <p>This flattens the 0.2–0.5 Ω region and removes the 4.5 MHz anti-resonance; impedance from 200 kHz to 5 MHz drops to about 20 mΩ. It leaves a mild 0.3 Ω bump near 100 kHz, still well above the audio band.</p>
       <p class="src">simulated (ngspice PDN model)</p></div></li>
     <li><div><div class="t">Spend the effort on the regulators, not on more board capacitance</div>
-      <p>Below 20 kHz the rail impedance is the regulator's own. Low-noise LDOs (LT3045/LT3094 class) are what builders used for their best results. Keep ferrite beads off the analog rails.</p>
-      <p class="src">simulated · diyAudio #893, #2819, #11631</p></div></li>
+      <p>Below 20 kHz the rail impedance is set by the regulator and its wiring, not by the board. ADI's LTspice models put 0.33 µV of noise on the AD1862's +V<sub>S</sub> pin with an LT3045 and 0.36 µV on −V<sub>S</sub> with an LT3094. An LM317-type regulator gives 53 µV with 10 µF on its ADJ pin and 509 µV without. The AD1862 publishes no supply rejection, so only the quiet rails are safe without knowing it; they are also what builders used for their best results. If you use LM317/LM337, always fit the ADJ capacitor. Keep ferrite beads off the analog rails.</p>
+      <p class="src">simulated (LTspice regulator models) · diyAudio #893, #2819, #11631</p></div></li>
     <li><div><div class="t">Put a GND via within 0.5 mm of each signal via</div>
       <p>The six vias on CLK, D_L and D_R currently have their nearest ground via 1.6–2.6 mm away. The return current visibly spreads at those layer changes.</p>
       <p class="src">simulated (return-current map)</p></div></li>
@@ -234,6 +238,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
       <li><b>Circuit:</b> ngspice transmission-line models of the CLK and LE trees for sweeps; a PDN model with the measured cap-to-pin distances.</li>
       <li><b>Sample clock:</b> a timing model of the RP2040 PIO divider (datasheet §3.5.5) and PLL limits (§2.18), with the NOS output spectrum for each clocking scheme.</li>
       <li><b>I/V stage and op-amps:</b> ngspice models of the AD1862 + op-amp I/V stage (stability, noise, slewing on NOS steps) for eight op-amps, cross-checked with TI's own PSpice models for six of them.</li>
+      <li><b>LTspice:</b> LTspice 17 in batch mode, for manufacturers' models that ngspice cannot use: TI's OPA1656, ADI's ADA4898 and ADA4625-1, op-amp noise taken from the models themselves, and ADI's regulator models (LT3045, LT3094, LT1963A, LT1964, LT3015, LT317A). On the same circuits it reproduces the ngspice phase margin, step and slewing results to within 0.6 dB.</li>
       <li><b>Bus routing:</b> a 2D field solver for coupled traces (single trace: 67.9 Ω, ε<sub>eff</sub> 3.13) feeding ngspice coupled-line and topology models, checked against the full-board run.</li>
       <li><b>Ground drop:</b> a resistive solver on the rasterised In1 + In2 fill, tied by every GND via and pin barrel.</li>
     </ul>
@@ -417,26 +422,49 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 <section>
   <div class="sec-tag">8 · Op-amp choice</div>
   <h2>Which op-amp, and one package or two</h2>
-  <p class="col">Eight op-amps often used for AD1862 I/V, each tried as built, with the feedback cap sized to its slew rate (C<sub>f</sub> ≥ 4 mA ÷ slew rate), and with the AD1862's internal 3 kΩ resistor. Gain-bandwidth, slew rate and noise are from the data sheets; phase margin and input capacitance are assumed (60°, 5 pF) where not published. TI's PSpice models cross-check six of them.</p>
+  <p class="col">Eight op-amps often used for AD1862 I/V, each tried as built, with the feedback cap sized to its slew rate (C<sub>f</sub> ≥ 4 mA ÷ slew rate), and with the AD1862's internal 3 kΩ resistor. Gain-bandwidth, slew rate and noise are from the data sheets; phase margin and input capacitance are assumed (60°, 5 pF) where not published. TI's PSpice models cross-check six of them, and LTspice adds the OPA1656, the ADA4898 in place of the AD797, and the ADA4625-1 (below).</p>
   <figure>
     <div class="plate"><img src="img/iv_opamps.png" alt="Scatter of I/V noise against slew-induced error for eight op-amps and three setups"></div>
     <figcaption><b>Noise against slewing</b> for each op-amp and setup, generic model. Up and to the right is better.</figcaption>
   </figure>
   <div class="tablewrap"><table>
-    <thead><tr><th>Op-amp</th><th>Input</th><th>C<sub>f</sub></th><th>S/N, 1.4 kΩ / 3 kΩ</th><th>Slewing at 20 kHz, generic: as built → C<sub>f</sub> sized</th><th>TI model: as built → C<sub>f</sub> sized</th><th>DIP-8 single?</th></tr></thead>
+    <thead><tr><th>Op-amp</th><th>Input</th><th>C<sub>f</sub></th><th>S/N, 1.4 kΩ / 3 kΩ</th><th>Slewing at 20 kHz, generic: as built → C<sub>f</sub> sized</th><th>Maker's model: as built → C<sub>f</sub> sized</th><th>DIP-8 single?</th></tr></thead>
     <tbody>
       <tr><td>OPA134 (now)</td><td>JFET</td><td class="n">220 pF</td><td class="n">115.6 / 118.6</td><td class="n">−60 → −103</td><td class="n">−107 → −125</td><td>yes</td></tr>
       <tr class="good"><td>OPA828</td><td>JFET</td><td class="n">47 pF</td><td class="n">119.8 / 122.2</td><td class="n">−142 → −142</td><td class="n">−139</td><td>no (SOIC, VSSOP)</td></tr>
       <tr><td>OPA627</td><td>JFET</td><td class="n">82 pF</td><td class="n">118.4 / 121.1</td><td class="n">−113 → −120</td><td class="n">−148 → −132</td><td>yes</td></tr>
       <tr><td>OPA1641</td><td>JFET</td><td class="n">220 pF</td><td class="n">118.5 / 121.2</td><td class="n">−84 → −102</td><td class="n">−101 → −124</td><td>no</td></tr>
-      <tr><td>OPA1656</td><td>CMOS</td><td class="n">180 pF</td><td class="n">119.4 / 122.0</td><td class="n">−106 → −120</td><td class="n">model failed</td><td>no</td></tr>
+      <tr><td>OPA1656</td><td>CMOS</td><td class="n">180 pF</td><td class="n">119.4 / 122.0</td><td class="n">−106 → −120</td><td class="n">−97 → −117 (LTspice)</td><td>no</td></tr>
       <tr><td>LM4562</td><td>bipolar</td><td class="n">220 pF</td><td class="n">120.9 / 122.9</td><td class="n">−100 → −117</td><td class="n">no TI model</td><td>dual only</td></tr>
       <tr class="good"><td>OPA1611 / OPA1612</td><td>bipolar</td><td class="n">150 pF</td><td class="n">122.2 / 123.7</td><td class="n">−108 → −121</td><td class="n">−137 → −123</td><td>no (SOIC)</td></tr>
-      <tr><td>AD797</td><td>bipolar</td><td class="n">220 pF</td><td class="n">122.1 / 123.5</td><td class="n">−103 → −120</td><td class="n">download failed</td><td>yes</td></tr>
+      <tr><td>AD797</td><td>bipolar</td><td class="n">220 pF</td><td class="n">122.1 / 123.5</td><td class="n">−103 → −120</td><td class="n">ADA4898: −119 → −108</td><td>yes</td></tr>
     </tbody>
   </table></div>
   <p class="col note">S/N is A-weighted against full scale; the AD1862 itself is about 120 dB. Slewing figures are dBFS for a −1 dBFS tone. TI-model values below about −120 dBFS are at the method's floor and mean "no measurable slewing". Packages are from the vendors' listings; check stock before ordering.</p>
-  <p class="col"><b>Recommendation: the OPA828 with the internal 3 kΩ resistor.</b> It is the only part that both models show clean with the existing 47 pF, it reaches 122 dB(A), and its JFET input has negligible bias current. The OPA1611 is about 1.5 dB quieter but needs 150 pF. The OPA627 fits the DIP socket directly at about 1.5 dB more noise. The OPA134 stays usable with 220 pF. I would skip the OPA1641 (slews like the OPA134), the LM4562 (a dual), the OPA1656 (least checked) and the AD797 (generic model only, and known to be touchy).</p>
+  <p class="col"><b>Recommendation: the OPA828 with the internal 3 kΩ resistor.</b> It is the only part that both models show clean with the existing 47 pF, it reaches 122 dB(A), and its JFET input has negligible bias current. The OPA1611 is about 1.5 dB quieter but needs 150 pF. The OPA627 fits the DIP socket directly at about 1.5 dB more noise. The OPA134 stays usable with 220 pF. The ADA4625-1 is an equal alternative to the OPA828 (see LTspice below). I would skip the OPA1641 (slews like the OPA134), the LM4562 (a dual), the OPA1656 (slews at 47 pF and distorts most even with 180 pF) and the AD797 (no maker's model to check; its stand-in, the ADA4898, distorts more than the JFET parts).</p>
+  <h3>Manufacturers' models in LTspice</h3>
+  <p class="col">LTspice runs three models ngspice could not: TI's OPA1656, which never converged there; ADI's ADA4898, the closest part with a model to the AD797 (0.9 nV/√Hz bipolar, 65 MHz, unity-gain stable); and ADI's ADA4625-1, a low-noise JFET part. OPA134 and OPA828 repeat the ngspice runs as a check: phase margin, summing-node step and slewing agree to within 0.6 dB where the error is above −110 dBFS. LTspice also uses the models' own noise, which ngspice could not. It agrees with the datasheet-based figures above to within 1 dB.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Op-amp</th><th>Model</th><th>C<sub>f</sub> sized</th><th>S/N, 1.4 / 3 kΩ</th><th>Summing node (mV)</th><th>20 kHz, 1.4 kΩ</th><th>20 kHz, 3 kΩ</th><th>Phase margin</th></tr></thead>
+    <tbody>
+      <tr><td>OPA134</td><td>TI, JFET</td><td class="n">220 pF</td><td class="n">115.5 / 118.5</td><td class="n">509 → 209</td><td class="n">−107 → −121</td><td class="n">−106 → −115</td><td class="n">52–70°</td></tr>
+      <tr class="good"><td>OPA828</td><td>TI, JFET</td><td class="n">47 pF</td><td class="n">119.8 / 122.3</td><td class="n">104</td><td class="n">−136</td><td class="n">−125</td><td class="n">72–75°</td></tr>
+      <tr><td>OPA1656</td><td>TI, CMOS</td><td class="n">180 pF</td><td class="n">120.4 / 122.8</td><td class="n">291 → 64</td><td class="n">−97 → −117</td><td class="n">−88 → −97</td><td class="n">50–55°</td></tr>
+      <tr><td>ADA4898 (for the AD797)</td><td>ADI, bipolar</td><td class="n">82 pF</td><td class="n">120.8 / 122.0</td><td class="n">69 → 48</td><td class="n">−119 → −108</td><td class="n">−106 → −103</td><td class="n">60–63°</td></tr>
+      <tr class="good"><td>ADA4625‑1</td><td>ADI, JFET</td><td class="n">100 pF</td><td class="n">120.7 / 123.0</td><td class="n">260 → 159</td><td class="n">−136 → −126</td><td class="n">−126 → −121</td><td class="n">58–66°</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col note">Pairs read 47 pF → C<sub>f</sub> sized. S/N in dB(A) against full scale, slewing error in dBFS for a −1 dBFS NOS tone (the scaled method). For scale, the AD1862's own THD+N at full scale is −94 to −98 dB.</p>
+  <figure>
+    <div class="plate narrow"><img src="img/lt_iv_noise.png" alt="Output noise density of five op-amps in the I/V stage with the AD1862's internal 3 kilohm resistor"></div>
+    <figcaption><b>I/V output noise from the models</b>, with the internal 3 kΩ resistor. Above 1 kHz the resistors set the floor, so the 0.9 nV/√Hz ADA4898 gains nothing over the JFET parts. The OPA1656's CMOS input has the most 1/f noise.</figcaption>
+  </figure>
+  <ul class="tight col">
+    <li><b>OPA1656:</b> slews with 47 pF (summing node 291 mV, −97 dBFS at 20 kHz) and needs 180 pF. With 3 kΩ it stays near −97 dBFS even then, the worst of the five.</li>
+    <li><b>ADA4898 (for the AD797):</b> the smallest summing-node swing (48–78 mV) and 120.8/122.0 dB(A), only about 1 dB better than the OPA828, because the 2.1 kΩ DAC resistance and R<sub>f</sub> dominate the noise. Its distortion grows with C<sub>f</sub> and with 3 kΩ, from −120 to −103 dBFS. That is still below the AD1862's own distortion, but well behind the JFET parts.</li>
+    <li><b>ADA4625-1:</b> 58–66° phase margin, 123.0 dB(A) with 3 kΩ, and −126 to −136 dBFS with the 47 pF already fitted. It matches the OPA828 and is also only in SOIC (or LFCSP).</li>
+    <li><b>Only parts that slew need a bigger C<sub>f</sub>.</b> For the OPA828, ADA4898 and ADA4625-1, 47 pF measures better than the slew-sized value, probably because a larger C<sub>f</sub> makes the output stage move more charge on every step.</li>
+  </ul>
   <h3>One dual for both channels, or one single per channel</h3>
   <p class="col">An earlier version of this design (the dev branch) used one LM4562 dual for both channels. The current board puts a single op-amp next to each DAC. The summing node is a virtual ground, so any stray capacitance C from the other channel's output becomes crosstalk of 2π·f·C·R<sub>f</sub>. The ngspice two-channel model matches that formula to 0.1 dB.</p>
   <div class="tablewrap"><table>
@@ -491,6 +519,36 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
     <div class="plate"><img src="img/pdn.png" alt="Impedance at the die for all eight AD1862 supply pins, plus upgrade variants"></div>
     <figcaption><b>|Z| at the die.</b> Left: all four U1 supply pins as built. Right: U2 pins, plus the +V<sub>L</sub> pin with a 10 µF X7R added (brown), and with a polymer bulk cap as well (pink). The regulator is modelled as 30 mΩ + 300 nH of wiring.</figcaption>
   </figure>
+  <h3>Which regulator for the ±12 V rails</h3>
+  <p class="col">The ±12VA rails feed both AD1862 ±V<sub>S</sub> pins and the I/V op-amps. They come from off the board, so the regulator is the builder's choice. LTspice has ADI's models for the usual candidates. Each one runs from 15 V into 25 mA, through 20 mΩ + 300 nH of wiring, to U1's decoupling and supply pin. For ripple, the 15 V input carries 100 mV p-p of 100 Hz sawtooth, as from a 2200 µF reservoir.</p>
+  <p class="col">The AD1862 data sheet gives no supply rejection. The last column shows how much it would need for the rail to stay harmless: noise 10 dB under the DAC's own 120 dB S/N, and the 100 Hz ripple tone under −130 dBFS. The op-amp's side is known: the TI models give each op-amp's supply rejection inside the I/V stage, and the table carries the rail's noise through it to the output.</p>
+  <figure>
+    <div class="plate"><img src="img/lt_supply.png" alt="Noise density, ripple rejection and impedance at the AD1862 supply pin for seven regulators"></div>
+    <figcaption><b>Seven regulators seen from U1's ±V<sub>S</sub> pins.</b> Left: noise density. Middle: rejection of input ripple, including the board's filtering. Right: impedance. The flat 23–50 mΩ at low frequencies is mostly the assumed wiring resistance.</figcaption>
+  </figure>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Regulator</th><th>Rail</th><th>Noise at the pin, 20 Hz–20 kHz (µV)</th><th>Ripple rejection at 100 Hz (dB)</th><th>|Z| at 1 kHz (mΩ)</th><th>At the OPA134 output (dBFS, A)</th><th>AD1862 would need (dB): noise / ripple</th></tr></thead>
+    <tbody>
+      <tr class="hl"><td>LT317A</td><td>+12&nbsp;V</td><td class="n">509*</td><td class="n">72</td><td class="n">128</td><td class="n">−118</td><td class="n">63 / 25</td></tr>
+      <tr><td>LT317A + 10 µF on ADJ</td><td>+12&nbsp;V</td><td class="n">53.3*</td><td class="n">90</td><td class="n">28</td><td class="n">−138</td><td class="n">43 / 8</td></tr>
+      <tr><td>LT1963A</td><td>+12&nbsp;V</td><td class="n">40.4</td><td class="n">51</td><td class="n">45</td><td class="n">−145</td><td class="n">41 / 47</td></tr>
+      <tr class="good"><td>LT3045</td><td>+12&nbsp;V</td><td class="n">0.33</td><td class="n">141</td><td class="n">23</td><td class="n">−183</td><td class="n">none / none</td></tr>
+      <tr><td>LT1964</td><td>−12&nbsp;V</td><td class="n">9.4</td><td class="n">48</td><td class="n">39</td><td class="n">−203</td><td class="n">18 / 49</td></tr>
+      <tr><td>LT3015</td><td>−12&nbsp;V</td><td class="n">26.9</td><td class="n">60</td><td class="n">49</td><td class="n">−182</td><td class="n">38 / 37</td></tr>
+      <tr class="good"><td>LT3094</td><td>−12&nbsp;V</td><td class="n">0.36</td><td class="n">120</td><td class="n">24</td><td class="n">−217</td><td class="n">none / none</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col note">* The LT317A model has almost no noise. These rows use the data sheet's 0.003 % of V<sub>out</sub> instead. With 10 µF on ADJ, the reference noise reaches the output at unity gain rather than ×9.6. The OPA134 stage's own noise is −115.5 dBFS(A).</p>
+  <figure>
+    <div class="plate narrow"><img src="img/lt_opamp_psrr.png" alt="I/V output per volt on each op-amp supply pin for OPA134 and OPA828"></div>
+    <figcaption><b>Op-amp supply rejection in the I/V stage</b> (TI models). The OPA134's positive-rail rejection falls 20 dB per decade above about 100 Hz. The OPA828 holds −112 dB up to 1 kHz on the positive rail but is weaker on the negative one.</figcaption>
+  </figure>
+  <ul class="tight col">
+    <li><b>LT3045 + LT3094:</b> 0.33 and 0.36 µV at the pin. Nothing to reject: the rails sit below the AD1862's own noise even if the DAC passes them straight through. The models show 120–145 dB of ripple rejection at 100 Hz; on a real board, layout and ground returns will limit that long before it matters.</li>
+    <li><b>LM317 type without the ADJ capacitor:</b> the only case that shows up at the I/V output. With the OPA134 it costs about 2 dB of S/N, and the rail impedance peaks at 0.9 Ω near 3.5 kHz. With 10 µF on ADJ the noise falls ten times and the peak disappears.</li>
+    <li><b>LT1963A, LT1964, LT3015:</b> 9–40 µV of noise and 48–60 dB of ripple rejection. The op-amps cope easily, but the AD1862 would need 18–41 dB of rejection for the noise and 37–49 dB for the ripple, and nobody knows whether it has that.</li>
+    <li>The same reasoning applies to the ±5 V V<sub>L</sub> rails, whose rejection is not published either.</li>
+  </ul>
 </section>
 
 <section>
@@ -503,6 +561,8 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
     <li>The clock model reproduces the divider's pattern exactly. Raspberry Pi does not specify random jitter from the RP2040's PLL and output pins; the 30 ps and 2 ps cases are assumptions, and the chart shows the cost of any value.</li>
     <li><b>Correction, 30 Oct 2026:</b> an earlier version of this page gave CLK→LE crosstalk as 51–88 mV and summing-node charge as 0.5–0.8 fC. Those figures included a spurious low-frequency term left over from extending the simulated waveforms. With it removed (coupling into a quiet line must vanish at DC) they are 25–73 mV and 0.2–0.6 fC.</li>
     <li>The I/V results use datasheet-based op-amp models plus TI's own PSpice models for six parts. The two disagree on how much slewing distorts: TI's models stay linear up to a hard slew limit, the generic model compresses gradually. So the I/V distortion figures are a range. Both agree on which parts slew and that 220 pF fixes it. The AD1862's output capacitance (20 pF) and switching time (50 ns; checked from 20 to 150 ns) are assumed. The OPA1656 model would not run in ngspice, and TI's noise models don't work there, so noise uses datasheet figures.</li>
+    <li>LTspice runs both the OPA1656 model and the TI noise models; its model-based noise agrees with the datasheet figures to within 1 dB.</li>
+    <li>Regulator results use ADI's LTspice models with assumed wiring (20 mΩ + 300 nH), 25 mA load and 15 V input with 100 mV p-p ripple. The LT317A model has almost no noise, so its data-sheet figure is used. Ripple rejection beyond about 100 dB is the models' figure; real layouts lose it to ground returns. The AD1862's supply rejection is unknown, hence the "would need" column.</li>
     <li>The full-wave model is a 43 × 65 mm crop. The Pico module and the far right of the board are outside it.</li>
     <li>Field maps are relative (per volt of source). They show where energy concentrates, not compliance margins.</li>
     <li>Items marked diyAudio are builders' reports, cited by post number; weigh them as such.</li>
@@ -510,7 +570,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 </section>
 
 <footer>
-  <p>Simulated on the 62DAC KiCad layout at design revision 342ad76, 29 October 2026. Toolchain: KiCad geometry export, openEMS board model, ngspice clock-tree and PDN models, and a ground-plane solver. All tools are free and open source: KiCad, openEMS, ngspice, numpy, scipy, matplotlib.</p>
+  <p>Simulated on the 62DAC KiCad layout at design revision 342ad76, 29 October 2026. Toolchain: KiCad geometry export, openEMS board model, ngspice clock-tree and PDN models, LTspice for manufacturers' op-amp and regulator models, and a ground-plane solver. All tools are free; all except LTspice are open source: KiCad, openEMS, ngspice, numpy, scipy, matplotlib.</p>
 </footer>
 </main>
 </body>
