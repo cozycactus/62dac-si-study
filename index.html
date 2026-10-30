@@ -423,12 +423,41 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
       <tr class="good"><td>OPA828, internal 3 kΩ ∥ 47 pF (2.1 Vrms)</td><td class="n">60°</td><td class="n">141 mV</td><td class="n">−147</td><td class="n">−136</td><td class="n">122.2</td></tr>
     </tbody>
   </table></div>
-  <p class="col note">Slewing error is the in-band error caused by slewing alone, for a −1 dBFS NOS tone. At 1 kHz it stays below −130 dBFS in every case. The DAC's switching time is assumed (50 ns); the conclusions hold from 20 to 150 ns.</p>
+  <p class="col note">Slewing error is the in-band error caused by slewing alone, for a −1 dBFS NOS tone. At 1 kHz it stays below −130 dBFS in every case. The DAC's switching time (50 ns) and output capacitance (20 pF) are assumed; the end of this section shows how much they matter.</p>
   <figure>
     <div class="plate"><img src="img/iv_slew_distortion.png" alt="Slew-induced error spectra for 1, 10 and 20 kHz NOS tones"></div>
     <figcaption><b>Error from slewing alone</b> for 1, 10 and 20 kHz tones. Generic model.</figcaption>
   </figure>
   <p class="col">TI's own OPA134 model gives a milder number for the as-built stage, −107 dBFS at 20 kHz instead of −60, because it stays perfectly linear right up to a hard slew limit while a real JFET input bends gradually. Both models agree that the summing node jumps about half a volt (509 mV in TI's model) and that 220 pF removes the error (−125 dBFS with TI's model). The stage's own noise is 14.7 nV/√Hz at the output: the OPA134's 8 nV/√Hz times a noise gain of 1.67, plus the thermal noise of the 1.4 kΩ and the DAC's 2.1 kΩ output.</p>
+  <h3>How much the AD1862's own output matters</h3>
+  <p class="col">The AD1862 data sheet gives the output resistance (2.1 kΩ ± 30%) and the settling time (350 ns), but not the output capacitance or how fast each code step switches. The PCM63, PCM1702 and AD1865 data sheets don't give a capacitance either. Everything above assumed 20 pF and 50 ns. LTspice swept each characteristic on its own, with the manufacturers' models, on the setups this study recommends or rejects.</p>
+  <figure>
+    <div class="plate"><img src="img/lt_dacout.png" alt="Phase margin, summing-node peak, slewing error and S/N of five I/V setups against the AD1862's output capacitance, output resistance and switching time"></div>
+    <figcaption><b>I/V results against the AD1862's output characteristics.</b> Columns: output capacitance, output resistance (the data sheet's ±30%), switching time of a code step. Rows: phase margin, summing-node peak on a full-scale step, slewing error for a −1 dBFS 20 kHz tone, and S/N. The dotted line marks the values assumed elsewhere on this page.</figcaption>
+  </figure>
+  <div class="tablewrap"><table>
+    <thead><tr><th>I/V setup</th><th>20 kHz error, C<sub>out</sub> 5–100 <span class="u">pF</span> (<span class="u">dBFS</span>)</th><th>20 kHz error, step 20–150 <span class="u">ns</span></th><th>S/N, R<sub>out</sub> ±30% (<span class="u">dB(A)</span>)</th><th>Phase margin, all cases</th></tr></thead>
+    <tbody>
+      <tr class="hl"><td>OPA134 as built</td><td class="n">−134 to −106</td><td class="n">−137 to −103</td><td class="n">114.2 to 116.3</td><td class="n">52 to 63°</td></tr>
+      <tr class="good"><td>OPA134, C<sub>f</sub> 220 pF</td><td class="n">−122 to −118</td><td class="n">−121 to −118</td><td class="n">114.2 to 116.3</td><td class="n">50 to 59°</td></tr>
+      <tr class="good"><td>OPA828, 3 kΩ ∥ 47 pF</td><td class="n">−127 to −125</td><td class="n">−126 to −124</td><td class="n">120.9 to 123.2</td><td class="n">74 to 77°</td></tr>
+      <tr class="hl"><td>AD797 as built</td><td class="n">−93 to −86</td><td class="n">−126 to −86</td><td class="n">121.4 to 122.4</td><td class="n">43 to 47°</td></tr>
+      <tr class="hl"><td>AD797, data sheet Fig. 54</td><td class="n">−72</td><td class="n">−75 to −72</td><td class="n">122.6 to 123.9</td><td class="n">43°</td></tr>
+    </tbody>
+  </table></div>
+  <ul class="tight col">
+    <li><b>Capacitance and switching speed decide how badly a stage that slews distorts, not which stages are good.</b> The OPA134 as built ranges from −102 to −137 dBFS depending on them: more capacitance and slower steps spread the edge out. The setups this study recommends, the OPA134 with 220 pF and the OPA828 with 3 kΩ, stay between −118 and −127 dBFS whatever the DAC does.</li>
+    <li><b>The output resistance sets the noise gain</b> (1 + R<sub>f</sub>/R<sub>out</sub>), so its ±30% tolerance moves S/N by about ±1 dB for every op-amp. For the OPA828 with 3 kΩ it is 120.9 to 123.2 dB(A). It shifts phase margin by a few degrees, never enough to change a ranking.</li>
+    <li><b>The AD797 as built sits right at its slew limit</b>, so the DAC's switching time decides whether it slews at all: −86 dBFS with 20 ns steps, −91 with 50 ns, −126 with 150 ns, where a full-scale step asks about 19 V/µs, just under its 20 V/µs. More output capacitance lowers its already small phase margin.</li>
+    <li>None of this changes the recommendations. It only means the as-built OPA134 figure is a range rather than one number.</li>
+  </ul>
+  <h3>Measuring your own AD1862</h3>
+  <p class="col">With the op-amp pulled from its socket, the board powered and the clock stopped (so the DAC holds one code), the summing node is just the AD1862's output in parallel with C50/C51 and the socket:</p>
+  <ul class="tight col">
+    <li><b>Capacitance and resistance:</b> a NanoVNA (or any VNA or impedance analyser) between socket pin 2 and pin 3 (ground), 100 kHz–10 MHz, fitted as R ∥ C. R is the DAC's actual output resistance. Repeat with the AD1862 out of its socket; the difference in C is the AD1862's own output capacitance.</li>
+    <li><b>Switching time and glitch:</b> 50 Ω from socket pin 2 to ground turns the output into ±50 mV. Toggle the MSB (full-scale step) and watch it on a 100 MHz or faster scope with a short ground spring.</li>
+    <li>Keep the test signal at the pin well under 100 mV: the data sheet gives no output compliance.</li>
+  </ul>
 </section>
 
 <section>
@@ -453,7 +482,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
     </tbody>
   </table></div>
   <p class="col note">S/N is A-weighted against full scale; the AD1862 itself is about 120 dB. Slewing figures are dBFS for a −1 dBFS tone. TI-model values below about −120 dBFS are at the method's floor and mean "no measurable slewing". Packages are from the vendors' listings; check stock before ordering.</p>
-  <p class="col"><b>Recommendation: the OPA828 with the internal 3 kΩ resistor.</b> It is the only part that both models show clean with the existing 47 pF, it reaches 122 dB(A), and its JFET input has negligible bias current. The OPA1611 is about 1.5 dB quieter but needs 150 pF. The OPA627 fits the DIP socket directly at about 1.5 dB more noise. The OPA134 stays usable with 220 pF. The ADA4625-1 is an equal alternative to the OPA828 (see LTspice below). I would skip the OPA1641 (slews like the OPA134), the LM4562 (a dual), the OPA1656 (slews at 47 pF and distorts most even with 180 pF) and the AD797 (ADI's own model slews with 47 pF like the OPA134; with 220 pF its phase margin drops to 43° and the error stays near −100 dBFS).</p>
+  <p class="col"><b>Recommendation: the OPA828 with the internal 3 kΩ resistor.</b> It is the only part that both models show clean with the existing 47 pF, it reaches 122 dB(A), and its JFET input has negligible bias current. The OPA1611 is about 1.5 dB quieter but needs 150 pF. The OPA627 fits the DIP socket directly at about 1.5 dB more noise. The OPA134 stays usable with 220 pF. The ADA4625-1 is an equal alternative to the OPA828 (see LTspice below). I would skip the OPA1641 (slews like the OPA134), the LM4562 (a dual), the OPA1656 (slews at 47 pF and distorts most even with 180 pF) and the AD797 (ADI's own model slews with 47 pF like the OPA134; with 220 pF its phase margin drops to 43° and the error stays near −100 dBFS; wired as its own data sheet shows, it reaches −72 dBFS in NOS).</p>
   <h3>Manufacturers' models in LTspice</h3>
   <p class="col">LTspice runs four models ngspice could not: TI's OPA1656, which never converged there; ADI's own AD797 model, a 1992 macro model that LTspice does not ship (analog.com offers it behind a license page); ADI's ADA4898, a newer bipolar part of the same class (0.9 nV/√Hz, 65 MHz, unity-gain stable); and ADI's ADA4625-1, a low-noise JFET part. OPA134 and OPA828 repeat the ngspice runs as a check: phase margin, summing-node step and slewing agree to within 0.6 dB where the error is above −110 dBFS. LTspice also uses the models' own noise, which ngspice could not. It agrees with the datasheet-based figures above to within 1 dB.</p>
   <div class="tablewrap"><table>
@@ -479,6 +508,19 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
     <li><b>ADA4625-1:</b> 58–66° phase margin, 123.0 dB(A) with 3 kΩ, and −126 to −136 dBFS with the 47 pF already fitted. It matches the OPA828 and is also only in SOIC (or LFCSP).</li>
     <li><b>Only parts that slew need a bigger C<sub>f</sub>.</b> For the OPA828, ADA4898 and ADA4625-1, 47 pF measures better than the slew-sized value, probably because a larger C<sub>f</sub> makes the output stage move more charge on every step.</li>
   </ul>
+  <h3>The AD797 as its data sheet wires it</h3>
+  <p class="col">Many builders copied the AD1862 I/V circuit from the AD797 data sheet (Fig. 54): 3 kΩ, 2000 pF from the summing node to ground, and 82 pF in series with 100 Ω across the feedback resistor. Some add 47 pF from pin 8 to the output, or scale it to the board's 1.4 kΩ with 1 nF and 100 pF + 100 Ω. ADI's model, in NOS:</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>AD797 circuit</th><th>Phase margin</th><th>Summing node (<span class="u">mV</span>)</th><th>10 kHz (<span class="u">dBFS</span>)</th><th>20 kHz (<span class="u">dBFS</span>)</th><th>S/N (<span class="u">dB(A)</span>)</th></tr></thead>
+    <tbody>
+      <tr class="hl"><td>Data sheet Fig. 54: 3 kΩ, 2000 pF to ground, 82 pF + 100 Ω</td><td class="n">43°</td><td class="n">46</td><td class="n">−85</td><td class="n">−72</td><td class="n">123.4</td></tr>
+      <tr class="hl"><td>Fig. 54 + 47 pF from pin 8 to the output</td><td class="n">23°</td><td class="n">44</td><td class="n">−82</td><td class="n">−71</td><td class="n">123.4</td></tr>
+      <tr class="hl"><td>Builders' version: 1.4 kΩ, 1 nF to ground, 100 pF + 100 Ω</td><td class="n">26°</td><td class="n">48</td><td class="n">−91</td><td class="n">−78</td><td class="n">122.0</td></tr>
+      <tr class="hl"><td>Builders' version + 47 pF from pin 8 to the output</td><td class="n">−24°</td><td class="n">98</td><td class="n">−21</td><td class="n">−16</td><td class="n">122.0</td></tr>
+      <tr class="hl"><td>For comparison: as built, 1.4 kΩ ∥ 47 pF</td><td class="n">46°</td><td class="n">258</td><td class="n">−115</td><td class="n">−91</td><td class="n">122.0</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col">The data sheet circuit is the worst setup in this study at −72 dBFS, although its summing node barely moves (46 mV). The 2000 pF keeps the input quiet, but each full-scale step must still move the output about 6 V through 3 kΩ ∥ 82 pF, about 24 V/µs, more than the AD797's 20 V/µs. That circuit assumed an oversampling filter in front of the DAC, which keeps the steps small; in NOS they are full size. In the model, 47 pF from pin 8 to the output cuts the data sheet circuit's phase margin to 23°. The builders' 1 nF version has only 26°, and with the pin-8 capacitor added it oscillates (phase margin −24°; the "error" of −16 dBFS is the oscillation). The 1992 model treats pin 8 behaviourally, so take these as a reason to check a built board with a scope rather than as measurements.</p>
   <h3>One dual for both channels, or one single per channel</h3>
   <p class="col">An earlier version of this design (the dev branch) used one LM4562 dual for both channels. The current board puts a single op-amp next to each DAC. The summing node is a virtual ground, so any stray capacitance C from the other channel's output becomes crosstalk of 2π·f·C·R<sub>f</sub>. The ngspice two-channel model matches that formula to 0.1 dB.</p>
   <div class="tablewrap"><table>
@@ -652,7 +694,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
     <li>Copper is a zero-thickness sheet with no solder mask. Real 35 µm copper with mask brings Z<sub>0</sub> from 73.8 Ω to about 65 Ω, which shortens the shelf only slightly.</li>
     <li>The clock model reproduces the divider's pattern exactly. Raspberry Pi does not specify random jitter from the RP2040's PLL and output pins; the 30 ps and 2 ps cases are assumptions, and the chart shows the cost of any value.</li>
     <li><b>Correction, 30 Oct 2026:</b> an earlier version of this page gave CLK→LE crosstalk as 51–88 mV and summing-node charge as 0.5–0.8 fC. Those figures included a spurious low-frequency term left over from extending the simulated waveforms. With it removed (coupling into a quiet line must vanish at DC) they are 25–73 mV and 0.2–0.6 fC.</li>
-    <li>The I/V results use datasheet-based op-amp models plus TI's own PSpice models for six parts. The two disagree on how much slewing distorts: TI's models stay linear up to a hard slew limit, the generic model compresses gradually. So the I/V distortion figures are a range. Both agree on which parts slew and that 220 pF fixes it. The AD1862's output capacitance (20 pF) and switching time (50 ns; checked from 20 to 150 ns) are assumed. The OPA1656 model would not run in ngspice, and TI's noise models don't work there, so noise uses datasheet figures.</li>
+    <li>The I/V results use datasheet-based op-amp models plus TI's own PSpice models for six parts. The two disagree on how much slewing distorts: TI's models stay linear up to a hard slew limit, the generic model compresses gradually. So the I/V distortion figures are a range. Both agree on which parts slew and that 220 pF fixes it. The AD1862's output capacitance (20 pF) and switching time (50 ns) are assumed; section 7 sweeps them (5–100 pF, 20–150 ns) together with the ±30% output resistance, and shows how to measure them. The OPA1656 model would not run in ngspice, and TI's noise models don't work there, so noise uses datasheet figures.</li>
     <li>The AD797 result uses ADI's 1992 macro model (license accepted on analog.com; the file is not redistributed). Its NOS waveform starts from 0 A, because the model finds no operating point at some input currents.</li>
     <li>LTspice runs both the OPA1656 model and the TI noise models; its model-based noise agrees with the datasheet figures to within 1 dB.</li>
     <li>Regulator results use ADI's LTspice models with assumed wiring (20 mΩ + 300 nH), 25 mA load and 15 V input with 100 mV p-p ripple. The LT317A model has almost no noise, so its data-sheet figure is used. Ripple rejection beyond about 100 dB is the models' figure; real layouts lose it to ground returns. The AD1862's supply rejection is unknown, hence the "would need" column.</li>
